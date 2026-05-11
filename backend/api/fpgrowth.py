@@ -29,17 +29,17 @@ async def run_fpgrowth_endpoint(req: FPGrowthRequest):
     if len(transactions) < 2:
         raise HTTPException(status_code=400, detail="事务数量不足(<2)，请增大时间窗口")
 
-    async def compute():
+    def compute():
         encoded, name_to_id, id_to_name = encode_transactions(transactions)
 
-        itemsets1 = run_fpgrowth(encoded, req.min_support)
-        rules1 = generate_association_rules(itemsets1, len(encoded), req.min_confidence, id_to_name)
+        itemsets1, fi_df1 = run_fpgrowth(encoded, req.min_support)
+        rules1 = generate_association_rules(fi_df1, req.min_confidence, id_to_name)
 
         filtered_txns, removed_names = filter_transactions_by_high_freq(transactions, req.threshold_ratio)
         encoded2, name_to_id2, id_to_name2 = encode_transactions(filtered_txns)
 
-        itemsets2 = run_fpgrowth(encoded2, req.min_support)
-        rules2 = generate_association_rules(itemsets2, len(encoded2), req.min_confidence, id_to_name2)
+        itemsets2, fi_df2 = run_fpgrowth(encoded2, req.min_support)
+        rules2 = generate_association_rules(fi_df2, req.min_confidence, id_to_name2)
 
         return {
             "round1": {

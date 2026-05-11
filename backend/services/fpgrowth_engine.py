@@ -3,26 +3,30 @@ import pandas as pd
 from mlxtend.frequent_patterns import fpgrowth, association_rules
 
 
-def run_fpgrowth(
-    encoded_transactions: list[list[int]],
-    min_support: float = 0.01,
-) -> list[dict]:
-    """
-    Run FP-Growth on encoded transactions.
-
-    Returns: [{"items": [int, ...], "support": float}, ...]
-    """
-    if not encoded_transactions:
-        return []
-
+def _build_onehot_df(encoded_transactions: list[list[int]]) -> pd.DataFrame:
+    """Build one-hot encoded DataFrame from transaction list."""
     all_items = sorted(set(item for txn in encoded_transactions for item in txn))
-    if not all_items:
-        return []
-
-    df = pd.DataFrame([
+    return pd.DataFrame([
         {item: (item in txn) for item in all_items}
         for txn in encoded_transactions
     ])
+
+
+def run_fpgrowth(
+    encoded_transactions: list[list[int]],
+    min_support: float = 0.01,
+) -> tuple[list[dict], pd.DataFrame | None]:
+    """
+    Run FP-Growth on encoded transactions.
+
+    Returns: (itemsets_list, frequent_itemsets_df_or_None)
+    """
+    if not encoded_transactions:
+        return [], None
+
+    df = _build_onehot_df(encoded_transactions)
+    if df.empty or len(df.columns) == 0:
+        return [], None
 
     fi = fpgrowth(df, min_support=min_support, use_colnames=True)
 
@@ -32,44 +36,29 @@ def run_fpgrowth(
             "items": sorted(list(row["itemsets"])),
             "support": round(float(row["support"]), 6),
         })
-    return result
+    return result, fi
 
 
 def generate_association_rules(
-    frequent_itemsets: list[dict],
-    n_transactions: int,
+    frequent_itemsets_df: pd.DataFrame | None,
     min_confidence: float = 0.5,
     id_to_name: dict[int, str] | None = None,
 ) -> list[dict]:
     """
-    Generate association rules from frequent itemsets.
-    Returns rules with antecedent, consequent, support, confidence, lift.
+    Generate association rules from frequent itemsets DataFrame.
+    The DataFrame must have 'support' and 'itemsets' columns (output of fpgrowth).
     """
-    if not frequent_itemsets or n_transactions == 0:
+    if frequent_itemsets_df is None or frequent_itemsets_df.empty:
         return []
 
-    all_items = sorted(set(item for fi in frequent_itemsets for item in fi["items"]))
-    if not all_items:
+    try:
+        rules = association_rules(
+            frequent_itemsets_df,
+            metric="confidence",
+            min_threshold=min_confidence,
+        )
+    except (ValueError, KeyError):
         return []
-
-    df_dict = {"support": []}
-    for item in all_items:
-        df_dict[item] = []
-
-    for fi in frequent_itemsets:
-        df_dict["support"].append(fi["support"])
-        for item in all_items:
-            df_dict[item].append(item in fi["items"])
-
-    df = pd.DataFrame(df_dict)
-
-    cols = [c for c in df.columns if c != "support"]
-    rules = association_rules(
-        df,
-        metric="confidence",
-        min_threshold=min_confidence,
-        support_only=True,
-    )
 
     result = []
     for _, row in rules.iterrows():
@@ -87,7 +76,7 @@ def generate_association_rules(
             "consequent": con,
             "antecedent_names": ant_names,
             "consequent_names": con_names,
-            "support": round(float(row["support"]), 6),
+            "support": round(float(row["antecedent support"]), 6),
             "confidence": round(float(row["confidence"]), 6),
             "lift": round(float(row.get("lift", 0)), 6),
         })

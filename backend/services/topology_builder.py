@@ -33,7 +33,7 @@ def build_topology(
             key = (alarm_a, alarm_b)
             rule_pairs[key] = max(rule_pairs.get(key, 0), lift)
 
-    for (alarm_a, alarm_b), lift in rule_pairs:
+    for (alarm_a, alarm_b), lift in rule_pairs.items():
         node_a = f"alarm:{alarm_a}"
         node_b = f"alarm:{alarm_b}"
         nodes_dict[node_a] = {"id": node_a, "name": alarm_a, "type": "alarm"}

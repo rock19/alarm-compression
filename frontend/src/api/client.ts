@@ -23,20 +23,23 @@ export const api = {
   },
 
   runFpgrowth: (params: Record<string, unknown>) =>
-    request(`${BASE}/fpgrowth`, { method: 'POST', body: JSON.stringify(params) }),
+    request('/fpgrowth', { method: 'POST', body: JSON.stringify(params) }),
 
   getRules: (params: Record<string, string | number>) => {
     const qs = new URLSearchParams(params as Record<string, string>).toString();
-    return request(`${BASE}/rules?${qs}`);
+    return request(`/rules?${qs}`);
   },
 
   getTransactions: (ruleIndex: number, round: string) =>
-    request(`${BASE}/transactions?rule_index=${ruleIndex}&round=${round}`),
+    request(`/transactions?rule_index=${ruleIndex}&round=${round}`),
 
-  getStats: () => request(`${BASE}/stats`),
+  getStats: () => request('/stats'),
 
-  getTopology: () => request(`${BASE}/topology`),
+  getTopology: () => request('/topology'),
 
   uploadTopology: (links: Record<string, unknown>[]) =>
-    request(`${BASE}/topology/upload`, { method: 'POST', body: JSON.stringify({ links }) }),
+    request('/topology/upload', { method: 'POST', body: JSON.stringify({ links }) }),
+
+  analyzeRule: (data: Record<string, unknown>) =>
+    request('/analyze-rule', { method: 'POST', body: JSON.stringify(data) }),
 };
