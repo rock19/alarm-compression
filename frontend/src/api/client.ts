@@ -13,9 +13,10 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  upload: (file: File) => {
+  upload: (files: FileList | File[]) => {
     const form = new FormData();
-    form.append('file', file);
+    const fileArr = Array.from(files as Iterable<File>);
+    fileArr.forEach(f => form.append('files', f));
     return fetch(`${BASE}/upload`, { method: 'POST', body: form }).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error(e.detail); });
       return r.json();
@@ -42,4 +43,24 @@ export const api = {
 
   analyzeRule: (data: Record<string, unknown>) =>
     request('/analyze-rule', { method: 'POST', body: JSON.stringify(data) }),
+
+  getDiagnosticTrees: () => request('/diagnostic-trees'),
+
+  diagnoseScenario: (data: Record<string, unknown>) =>
+    request('/diagnose-scenario', { method: 'POST', body: JSON.stringify(data) }),
+
+  getNENeighbors: (neNames: string[]) =>
+    request('/topology/ne-neighbors', { method: 'POST', body: JSON.stringify({ ne_names: neNames }) }),
+
+  validateAlarms: (file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetch('http://localhost:8000/api/validate', { method: 'POST', body: form }).then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.detail); });
+      return r.json();
+    });
+  },
+
+  matchRealtimeAlarms: (alarms: Record<string, unknown>[]) =>
+    request('/match-alarms', { method: 'POST', body: JSON.stringify({ alarms }) }),
 };

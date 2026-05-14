@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Spin, message, Alert } from 'antd';
+import { Row, Col, Card, Statistic, Spin, message, Empty } from 'antd';
 import { AlertOutlined, NodeIndexOutlined, TagsOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 import { api } from '../api/client';
@@ -18,11 +18,24 @@ interface StatsData {
 export default function Dashboard() {
   const [stats, setStats] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [initialCheck, setInitialCheck] = useState(true);
 
-  const handleUpload = async (f: File) => {
+  // On mount, check if backend already has data
+  useEffect(() => {
+    api.getStats()
+      .then((s) => {
+        if (s && (s as StatsData).total_alarms > 0) {
+          setStats(s as StatsData);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setInitialCheck(false));
+  }, []);
+
+  const handleUpload = async (files: FileList) => {
     setLoading(true);
     try {
-      await api.upload(f);
+      const result = await api.upload(files) as any;
       const s = await api.getStats() as StatsData;
       setStats(s);
       message.success(`已加载 ${s.total_alarms} 条告警记录`);
@@ -32,33 +45,21 @@ export default function Dashboard() {
     setLoading(false);
   };
 
-  if (!stats) {
-    return (
-      <div style={{ textAlign: 'center', paddingTop: 100 }}>
-        <Alert
-          type="info"
-          message="请上传告警数据文件"
-          description={<input type="file" accept=".xlsx" onChange={e => {
-            const f = e.target.files?.[0];
-            if (f) handleUpload(f);
-          }} />}
-          style={{ maxWidth: 500, margin: '0 auto' }}
-        />
-      </div>
-    );
+  if (initialCheck) {
+    return <Spin style={{ display: 'block', marginTop: 100 }} />;
   }
 
-  const severityPieOption = {
-    title: { text: '告警级别分布', left: 'center' },
+  const severityPieOption = stats ? {
+    title: { text: '告警级别分布', left: 'center', top: 0 },
     tooltip: { trigger: 'item' },
     series: [{
-      type: 'pie', radius: ['40%', '70%'],
+      type: 'pie', radius: ['40%', '70%'], top: 40,
       data: Object.entries(stats.severity_distribution).map(([k, v]) => ({ name: k, value: v })),
-      label: { formatter: '{b}: {c}' },
+      label: { formatter: '{b}: {c}', fontSize: 11 },
     }],
-  };
+  } : null;
 
-  const barOption = {
+  const barOption = stats ? {
     title: { text: '告警频次 Top 20', left: 'center' },
     tooltip: { trigger: 'axis' },
     xAxis: { type: 'value' },
@@ -69,9 +70,9 @@ export default function Dashboard() {
     },
     series: [{ type: 'bar', data: stats.top_alarm_names.map(i => i.count).reverse() }],
     grid: { left: 180 },
-  };
+  } : null;
 
-  const neBarOption = {
+  const neBarOption = stats ? {
     title: { text: '网元告警 Top 20', left: 'center' },
     tooltip: { trigger: 'axis' },
     xAxis: { type: 'value' },
@@ -82,15 +83,38 @@ export default function Dashboard() {
     },
     series: [{ type: 'bar', data: stats.top_network_elements.map(i => i.count).reverse() }],
     grid: { left: 180 },
-  };
+  } : null;
 
   return (
     <Spin spinning={loading}>
-      <Row gutter={[16, 16]}>
-        <Col span={8}><Card><Statistic title="告警总数" value={stats.total_alarms} prefix={<AlertOutlined />} /></Card></Col>
-        <Col span={8}><Card><Statistic title="网元数量" value={stats.total_nes} prefix={<NodeIndexOutlined />} /></Card></Col>
-        <Col span={8}><Card><Statistic title="告警类型" value={stats.total_alarm_types} prefix={<TagsOutlined />} /></Card></Col>
-      </Row>
+      <Card size="small" style={{ marginBottom: 16 }}>
+        <Row align="middle" gutter={16}>
+          <Col flex="auto">
+            {stats
+              ? <span>已加载 <b>{stats.total_alarms}</b> 条告警，<b>{stats.total_nes}</b> 个网元，<b>{stats.total_alarm_types}</b> 种类型</span>
+              : <span style={{ color: '#999' }}>暂无数据，请上传历史告警 Excel 文件</span>
+            }
+          </Col>
+          <Col>
+            <input type="file" accept=".xlsx" multiple onChange={e => {
+              const files = e.target.files;
+              if (files && files.length > 0) {
+                handleUpload(files);
+              }
+            }} />
+          </Col>
+        </Row>
+      </Card>
+
+      {!stats ? (
+        <Empty description="上传历史告警数据后展示仪表盘" style={{ marginTop: 80 }} />
+      ) : (
+        <>
+          <Row gutter={[16, 16]}>
+            <Col span={8}><Card><Statistic title="告警总数" value={stats.total_alarms} prefix={<AlertOutlined />} /></Card></Col>
+            <Col span={8}><Card><Statistic title="网元数量" value={stats.total_nes} prefix={<NodeIndexOutlined />} /></Card></Col>
+            <Col span={8}><Card><Statistic title="告警类型" value={stats.total_alarm_types} prefix={<TagsOutlined />} /></Card></Col>
+          </Row>
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col span={12}><Card><ReactECharts option={severityPieOption} /></Card></Col>
         <Col span={12}><Card><ReactECharts option={barOption} /></Card></Col>
@@ -98,6 +122,9 @@ export default function Dashboard() {
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col span={24}><Card><ReactECharts option={neBarOption} /></Card></Col>
       </Row>
+
+        </>
+      )}
     </Spin>
   );
 }
