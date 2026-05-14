@@ -1,7 +1,7 @@
 import os
 import tempfile
 from fastapi import APIRouter, UploadFile, File, HTTPException
-from services.data_loader import load_excel
+from services.data_loader import load_excel_multiple
 from services.store import store
 from schemas.schemas import UploadResponse
 
@@ -9,18 +9,18 @@ router = APIRouter()
 
 
 @router.post("/upload", response_model=UploadResponse)
-async def upload_excel(file: UploadFile = File(...)):
-    if not file.filename.endswith(".xlsx"):
-        raise HTTPException(status_code=400, detail="仅支持 .xlsx 格式文件")
-
+async def upload_excel(files: list[UploadFile] = File(...)):
+    tmp_paths = []
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            content = await file.read()
-            tmp.write(content)
-            tmp_path = tmp.name
+        for file in files:
+            if not file.filename or not file.filename.endswith(".xlsx"):
+                raise HTTPException(status_code=400, detail=f"仅支持 .xlsx 格式文件: {file.filename}")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+                content = await file.read()
+                tmp.write(content)
+                tmp_paths.append(tmp.name)
 
-        records, meta = load_excel(tmp_path)
-        os.unlink(tmp_path)
+        records, meta = load_excel_multiple(tmp_paths)
 
         if not records:
             raise HTTPException(status_code=400, detail="文件中无有效告警记录")
@@ -42,3 +42,9 @@ async def upload_excel(file: UploadFile = File(...)):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文件处理失败: {str(e)}")
+    finally:
+        for p in tmp_paths:
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
