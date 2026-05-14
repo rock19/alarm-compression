@@ -154,9 +154,8 @@ def clean_continuous_alarms(records: list[dict]) -> list[dict]:
     告警名称, 告警类型, 告警描述) are considered duplicates if the
     second alarm's 发生时间 falls within [first.发生时间, first.恢复时间].
 
-    Assumes records are sorted by 发生时间.
+    Returns records sorted by 发生时间.
     """
-    from datetime import datetime
 
     DEDUP_FIELDS = [
         "专业", "网管", "网元", "告警对象", "告警级别",
