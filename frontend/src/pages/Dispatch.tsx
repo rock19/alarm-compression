@@ -92,11 +92,6 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
   }
   fullNes.forEach(n => { if (!added.has(n)) neOrder.push(n); });
 
-  // No graph needed, use card layout below
-  const alarmTableData = neOrder.filter(ne => alarmedNes.has(ne) && neInfo[ne]?.alarmDetails?.length).flatMap(ne =>
-    (neInfo[ne]?.alarmDetails || []).map((a: any) => ({ ...a, _ne: ne }))
-  );
-
   return (
     <Collapse size="small" ghost style={{ marginTop: 4 }}
       items={[{
@@ -173,18 +168,6 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
                 }],
               };
             })()} style={{ height: 280 }} />
-            <Table size="small" pagination={false}
-              dataSource={alarmTableData.map((a: any, i: number) => ({ ...a, key: i }))}
-              columns={[
-                { title: '网元', dataIndex: '_ne', width: 180, ellipsis: true, render: (v: string) => <span style={{fontSize:10}}>{v}</span> },
-                { title: '告警名称', dataIndex: 'name', width: 150, render: (v: string) => <div style={{fontSize:10,wordBreak:'break-all',whiteSpace:'normal'}}>{v}</div> },
-                { title: '告警描述', dataIndex: 'alarm_desc', width: 160, render: (v: string) => <div style={{fontSize:10,wordBreak:'break-all',whiteSpace:'normal'}}>{v || '-'}</div> },
-                { title: '级别', dataIndex: 'severity', width: 70, render: (v: string) => <Tag color={v?.includes('紧急')?'red':v?.includes('主要')?'orange':'blue'} style={{fontSize:9}}>{v}</Tag> },
-                { title: '首次', dataIndex: 'first_time', width: 130, render: (v: string) => <span style={{fontSize:10}}>{(v||'').replace('T',' ').slice(0,16)}</span> },
-                { title: '最后', dataIndex: 'last_time', width: 130, render: (v: string) => <span style={{fontSize:10}}>{(v||'').replace('T',' ').slice(0,16)}</span> },
-              ]}
-              style={{ marginTop: 8 }}
-            />
             <Collapse size="small" ghost
               items={[{
                 key: 'link-table',
