@@ -32,13 +32,19 @@ export default function Dashboard() {
       .finally(() => setInitialCheck(false));
   }, []);
 
+  const [uploadInfo, setUploadInfo] = useState<{ raw: number; filtered: number; total: number } | null>(null);
+
   const handleUpload = async (files: FileList) => {
     setLoading(true);
     try {
       const result = await api.upload(files) as any;
       const s = await api.getStats() as StatsData;
       setStats(s);
-      message.success(`已加载 ${s.total_alarms} 条告警记录`);
+      if (result.raw_total) {
+        setUploadInfo({ raw: result.raw_total, filtered: result.filtered_count || 0, total: s.total_alarms });
+      }
+      const filterMsg = result.filtered_count ? `，过滤重复 ${result.filtered_count} 条` : '';
+      message.success(`已加载 ${s.total_alarms} 条告警记录${filterMsg}`);
     } catch (e: any) {
       message.error(e.message);
     }
@@ -91,7 +97,7 @@ export default function Dashboard() {
         <Row align="middle" gutter={16}>
           <Col flex="auto">
             {stats
-              ? <span>已加载 <b>{stats.total_alarms}</b> 条告警，<b>{stats.total_nes}</b> 个网元，<b>{stats.total_alarm_types}</b> 种类型</span>
+              ? <span>导入 <b>{uploadInfo?.raw || stats.total_alarms}</b> 条，过滤重复 <b>{uploadInfo?.filtered || 0}</b> 条，保留 <b>{stats.total_alarms}</b> 条 | <b>{stats.total_nes}</b> 个网元，<b>{stats.total_alarm_types}</b> 种类型</span>
               : <span style={{ color: '#999' }}>暂无数据，请上传历史告警 Excel 文件</span>
             }
           </Col>

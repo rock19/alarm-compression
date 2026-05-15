@@ -1,10 +1,12 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import { Layout, Menu } from 'antd';
-import { DashboardOutlined, LinkOutlined, LineChartOutlined, ApartmentOutlined } from '@ant-design/icons';
+import { DashboardOutlined, LinkOutlined, LineChartOutlined, ApartmentOutlined, ForkOutlined, SendOutlined } from '@ant-design/icons';
 import Dashboard from './pages/Dashboard';
 import Rules from './pages/Rules';
 import Timeline from './pages/Timeline';
 import Topology from './pages/Topology';
+import DiagnosticTree from './pages/DiagnosticTree';
+import Dispatch from './pages/Dispatch';
 
 const { Sider, Content } = Layout;
 
@@ -29,6 +31,12 @@ function App() {
             <Menu.Item key="topology" icon={<ApartmentOutlined />}>
               <NavLink to="/topology">拓扑视图</NavLink>
             </Menu.Item>
+            <Menu.Item key="diagnostic-tree" icon={<ForkOutlined />}>
+              <NavLink to="/diagnostic-tree">诊断树</NavLink>
+            </Menu.Item>
+            <Menu.Item key="dispatch" icon={<SendOutlined />}>
+              <NavLink to="/dispatch">模拟派单</NavLink>
+            </Menu.Item>
           </Menu>
         </Sider>
         <Content style={{ padding: 24, background: '#f5f5f5' }}>
@@ -37,6 +45,8 @@ function App() {
             <Route path="/rules" element={<Rules />} />
             <Route path="/timeline" element={<Timeline />} />
             <Route path="/topology" element={<Topology />} />
+            <Route path="/diagnostic-tree" element={<DiagnosticTree />} />
+            <Route path="/dispatch" element={<Dispatch />} />
           </Routes>
         </Content>
       </Layout>

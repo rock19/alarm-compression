@@ -26,8 +26,10 @@ export const api = {
   runFpgrowth: (params: Record<string, unknown>) =>
     request('/fpgrowth', { method: 'POST', body: JSON.stringify(params) }),
 
-  getRules: (params: Record<string, string | number>) => {
-    const qs = new URLSearchParams(params as Record<string, string>).toString();
+  getRules: (params: Record<string, any>) => {
+    const qs = new URLSearchParams(Object.fromEntries(
+      Object.entries(params).map(([k, v]) => [k, String(v)])
+    )).toString();
     return request(`/rules?${qs}`);
   },
 
@@ -48,6 +50,9 @@ export const api = {
 
   diagnoseScenario: (data: Record<string, unknown>) =>
     request('/diagnose-scenario', { method: 'POST', body: JSON.stringify(data) }),
+
+  workOrderGuidance: (data: Record<string, unknown>) =>
+    request('/work-order-guidance', { method: 'POST', body: JSON.stringify(data) }),
 
   getNENeighbors: (neNames: string[]) =>
     request('/topology/ne-neighbors', { method: 'POST', body: JSON.stringify({ ne_names: neNames }) }),

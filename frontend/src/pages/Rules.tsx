@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Card, Table, InputNumber, Button, Space, Tag, Tabs,
+  Card, Table, InputNumber, Button, Space, Tag, Tabs, Select,
   Input, message, Spin, Empty, Row, Col, Collapse, Typography, Divider,
 } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
@@ -15,6 +15,9 @@ interface Rule {
   support: number;
   confidence: number;
   lift: number;
+  temporal_confidence?: number;
+  temporal_lift?: number;
+  directional_support?: number;
 }
 
 function explainRule(r: Rule) {
@@ -22,15 +25,41 @@ function explainRule(r: Rule) {
   const con = r.consequent.join('、');
   const sPct = (r.support * 100).toFixed(2);
   const cPct = (r.confidence * 100).toFixed(2);
+  const tc = r.temporal_confidence;
+  const tl = r.temporal_lift;
 
   const dataExplain = [
-    `支持度 ${r.support.toFixed(4)}：在所有 ${Math.round(r.antecedent.length + r.consequent.length)} 个告警构成的事务中，"${ant}" 与 "${con}" 同时出现的比例为 ${sPct}%。`,
-    `置信度 ${r.confidence.toFixed(4)}：当 "${ant}" 出现时，${cPct}% 的情况下 "${con}" 也会出现。`,
+    `支持度 ${r.support.toFixed(4)}：在所有事务中，"${ant}" 与 "${con}" 同时出现的比例为 ${sPct}%。`,
+    `置信度 ${r.confidence.toFixed(4)}：当 "${ant}" 出现时，${cPct}% 的事务中 "${con}" 也出现（不区分时间先后）。`,
     `提升度 ${r.lift.toFixed(2)}：${r.lift > 1 ? `${r.lift > 3 ? '远' : ''}大于 1` : '小于等于 1'}，说明前件的出现${r.lift > 1 ? '显著提升了' : r.lift < 1 ? '反而降低了' : '对'}后件的发生概率${r.lift > 1 ? '' : '无正向影响'}。`,
-  ].join('\n');
+  ];
+
+  if (tc !== undefined && tc !== null) {
+    const tcPct = (tc * 100).toFixed(2);
+    const tlVal = tl !== undefined ? tl.toFixed(2) : 'N/A';
+    dataExplain.push('');
+    dataExplain.push(`【时间相关性分析】`);
+    dataExplain.push(`时序置信度 ${tc.toFixed(4)}：在前件 "${ant}" 确实先于后件 "${con}" 发生的前提下，${tcPct}% 的事务中该时间顺序成立。`);
+    if (tl !== undefined) {
+      dataExplain.push(`时序提升度 ${tlVal}：${tl && tl > 1 ? '大于 1，时间先后关系具有统计显著性' : tl && tl < 1 ? '小于 1，时间先后关系弱于随机水平' : '接近 1，时间先后与随机共现无差异'}。`);
+    }
+    if (tc > 0.9) {
+      dataExplain.push(`结论：前件几乎总是先于后件发生，存在明确的时序因果链。`);
+    } else if (tc > 0.5) {
+      dataExplain.push(`结论：前件在多数情况下先于后件，存在一定的时序因果关系。`);
+    } else if (tc > 0) {
+      dataExplain.push(`结论：前件与后件的时间顺序不固定，可能为双向触发或由共同根因同时触发。`);
+    } else {
+      dataExplain.push(`结论：前件从未先于后件发生，该规则的时序方向可能相反。`);
+    }
+  }
+
+  const text = dataExplain.join('\n');
 
   let bizInterpret: string;
-  if (r.lift > 3 && r.confidence > 0.7) {
+  if (tc !== undefined && tc > 0.9 && r.lift > 1.5) {
+    bizInterpret = `强时序关联规则。${ant} 不仅与 ${con} 高频共现，而且在时间上几乎总是先于 ${con} 发生，具有明确的因果关系。建议将 ${ant} 作为 ${con} 的预警信号，在 ${ant} 出现时主动检查可能导致 ${con} 的根因。`;
+  } else if (r.lift > 3 && r.confidence > 0.7) {
     bizInterpret = `强关联规则。${ant} 发生后，${con} 几乎必然伴随出现，建议将二者纳入同一告警压缩策略，或排查是否存在共同的根因（如网络设备故障、链路中断等）。`;
   } else if (r.lift > 1.5 && r.confidence > 0.5) {
     bizInterpret = `中等关联规则。${ant} 与 ${con} 存在较明显的伴随关系，可考虑在告警聚合时将二者归为一组，减少重复派单。`;
@@ -40,7 +69,7 @@ function explainRule(r: Rule) {
     bizInterpret = `无显著正向关联。${ant} 的出现并未提升 ${con} 的发生概率，该规则可能由随机共现产生，建议忽略或调整参数重新挖掘。`;
   }
 
-  return { dataExplain, bizInterpret };
+  return { dataExplain: text, bizInterpret };
 }
 
 function AiAnalysis({ record, dataExplain, bizInterpret, index }: {
@@ -115,7 +144,7 @@ function AiAnalysis({ record, dataExplain, bizInterpret, index }: {
         </Row>
       ) : (
         <Text type="secondary" style={{ fontSize: 13 }}>
-          点击按钮，将规则数据、算法解释和业务解析发送给大模型，获取约 200 字的专业分析。
+          点击按钮，将规则数据、算法解释和业务解析发送给大模型，获取 500 字以内的专业分析。
         </Text>
       )}
     </Card>
@@ -126,6 +155,8 @@ export default function Rules() {
   const [params, setParams] = useState({
     time_window_seconds: 300, min_support: 0.01, min_confidence: 1.0, threshold_ratio: 0.2,
   });
+  const [nmOptions, setNmOptions] = useState<string[]>([]);
+  const [selectedNm, setSelectedNm] = useState('all');
   const [rules, setRules] = useState<Rule[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -134,10 +165,21 @@ export default function Rules() {
   const [page, setPage] = useState(1);
   const [activeRound, setActiveRound] = useState('all');
 
+  // Fetch available network managers on mount
+  useEffect(() => {
+    api.getStats().then((s: any) => {
+      if (s && s.network_managers) {
+        setNmOptions(s.network_managers.filter((n: string) => n));
+      }
+    }).catch(() => {});
+  }, []);
+
   const fetchRules = async () => {
     setLoading(true);
     try {
-      const res = await api.getRules({ round: activeRound, page, page_size: 20, search, sort_by: 'lift', sort_order: 'desc' }) as { rules: Rule[]; total: number };
+      const qParams: Record<string, any> = { round: activeRound, page, page_size: 20, search, sort_by: 'lift', sort_order: 'desc' };
+      if (selectedNm !== 'all') qParams.network_manager = selectedNm;
+      const res = await api.getRules(qParams) as { rules: Rule[]; total: number };
       setRules(res.rules);
       setTotal(res.total);
     } catch (e: any) { message.error(e.message); }
@@ -155,7 +197,7 @@ export default function Rules() {
     setLoading(false);
   };
 
-  useEffect(() => { if (computed) fetchRules(); }, [page, activeRound, search]);
+  useEffect(() => { if (computed) fetchRules(); }, [page, activeRound, search, selectedNm]);
 
   const columns = [
     {
@@ -185,12 +227,30 @@ export default function Rules() {
       ),
       sorter: (a: Rule, b: Rule) => a.lift - b.lift,
     },
+    {
+      title: '时序置信度', dataIndex: 'temporal_confidence', width: 100,
+      render: (v: number | undefined) => v !== undefined && v !== null ? (
+        <span style={{ color: v > 0.9 ? '#cf1322' : v > 0.5 ? '#fa8c16' : '#999', fontWeight: v > 0.9 ? 700 : 400 }}>
+          {v.toFixed(4)}
+        </span>
+      ) : '-',
+      sorter: (a: Rule, b: Rule) => (a.temporal_confidence ?? -1) - (b.temporal_confidence ?? -1),
+    },
+    {
+      title: '时序提升度', dataIndex: 'temporal_lift', width: 100,
+      render: (v: number | undefined) => v !== undefined && v !== null ? (
+        <span style={{ color: (v ?? 0) > 2 ? '#cf1322' : '#333', fontWeight: (v ?? 0) > 2 ? 700 : 400 }}>
+          {v.toFixed(2)}
+        </span>
+      ) : '-',
+      sorter: (a: Rule, b: Rule) => (a.temporal_lift ?? -1) - (b.temporal_lift ?? -1),
+    },
   ];
 
   return (
     <div>
       <Card title="算法参数" style={{ marginBottom: 16 }}>
-        <Row gutter={[16, 16]} align="middle">
+        <Row gutter={[16, 12]} align="middle">
           <Col span={6}>
             <span>时间窗口(秒): </span>
             <InputNumber min={10} max={3600} value={params.time_window_seconds}
@@ -211,6 +271,13 @@ export default function Rules() {
               运行 FP-Growth
             </Button>
           </Col>
+          {nmOptions.length > 1 && (
+            <Col span={24}>
+              <span style={{ fontSize: 12, color: '#52c41a' }}>
+                FP-Growth 已自动按网管分别挖掘（{nmOptions.join('、')}）
+              </span>
+            </Col>
+          )}
         </Row>
       </Card>
 
@@ -313,11 +380,72 @@ export default function Rules() {
             </div>
           ),
         },
+        {
+          key: 'temporal-explain',
+          label: <><InfoCircleOutlined style={{ marginRight: 8 }} />时间相关性：时序置信度与时序提升度</>,
+          children: (
+            <div style={{ padding: '8px 0' }}>
+              <Paragraph style={{ marginBottom: 12 }}>
+                <Text strong>为什么需要时间相关性分析？</Text> — 传统关联规则只回答"两个告警是否在时间窗口内<Text strong>共同出现</Text>"，不回答"<Text strong>谁先谁后</Text>"。这就导致双向规则（A→B 和 B→A）的支持度、置信度、提升度可能完全相同，无法区分因果方向。
+              </Paragraph>
+              <Row gutter={[16, 12]}>
+                <Col span={8}>
+                  <Card size="small" title={<Text strong>时序置信度 Temporal Confidence</Text>}>
+                    <Paragraph type="secondary" style={{ margin: 0, fontSize: 13 }}>
+                      公式：<Text code>tc(A→B) = count(A先于B) / count(A出现)</Text><br /><br />
+                      含义：在前件 A 出现的所有事务中，A <Text strong>确实在时间上先于</Text>后件 B 发生的比例。<br /><br />
+                      <Text type="success">tc ≈ 1.0</Text>：A 几乎总是先于 B，存在明确的时序因果链<br />
+                      <Text type="warning">tc ≈ 0.5</Text>：A 和 B 的时间顺序不固定，可能互为因果或同源触发<br />
+                      <Text type="danger">tc ≈ 0.0</Text>：A 从未先于 B，该规则的时序方向可能相反<br /><br />
+                      时序置信度是区分双向规则的核心指标。例如电源故障→电源输入丢失和电源输入丢失→电源故障，共现置信度都为 100%，但时序置信度可以判断哪个告警在时间上更靠前。
+                    </Paragraph>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card size="small" title={<Text strong>时序提升度 Temporal Lift</Text>}>
+                    <Paragraph type="secondary" style={{ margin: 0, fontSize: 13 }}>
+                      公式：<Text code>tl(A→B) = tc(A→B) / support(B)</Text><br /><br />
+                      含义：衡量 A 先于 B 发生的概率是否<Text strong>显著高于</Text> B 的随机发生概率。<br /><br />
+                      <Text type="success">tl &gt; 1</Text>：A 先于 B 的时间顺序具有统计显著性<br />
+                      <Text>tl ≈ 1</Text>：时间先后关系与随机水平无差异<br />
+                      <Text type="danger">tl &lt; 1</Text>：A 先于 B 的概率反而低于随机，时序方向可能相反
+                    </Paragraph>
+                  </Card>
+                </Col>
+                <Col span={8}>
+                  <Card size="small" title={<Text strong>使用建议</Text>}>
+                    <Paragraph type="secondary" style={{ margin: 0, fontSize: 13 }}>
+                      <Text strong>查看规则时关注三个维度</Text>：<br /><br />
+                      ① <Text strong>共现置信度</Text>（原始）：两者是否一起出现<br />
+                      ② <Text strong>时序置信度</Text>（新增）：前件是否确实先发生<br />
+                      ③ <Text strong>时序提升度</Text>（新增）：先后关系是否显著<br /><br />
+                      <Text type="success" strong>强时序规则</Text>：共现置信度高 + 时序置信度 &gt; 0.9 + 时序提升度 &gt; 1<br />
+                      → 前件是后件的<Text strong>可靠预警信号</Text>，可据此建立主动监控策略<br /><br />
+                      <Text type="warning" strong>弱时序规则</Text>：共现置信度高 + 时序置信度 ≈ 0.5<br />
+                      → 两者由<Text strong>共同根因同时触发</Text>，不是因果链而是共生关系
+                    </Paragraph>
+                  </Card>
+                </Col>
+              </Row>
+            </div>
+          ),
+        },
       ]}
       />
 
       <Card title="关联规则">
         <Space style={{ marginBottom: 16 }}>
+          {nmOptions.length > 1 && (
+            <Select
+              value={selectedNm}
+              onChange={v => { setSelectedNm(v); setPage(1); }}
+              style={{ width: 220 }}
+              options={[
+                { label: `全部网管 (合并)`, value: 'all' },
+                ...nmOptions.map(n => ({ label: n, value: n })),
+              ]}
+            />
+          )}
           <Tabs activeKey={activeRound} onChange={setActiveRound}
             items={[
               { key: 'all', label: '全部' },

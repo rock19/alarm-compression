@@ -14,8 +14,12 @@ async def get_rules(
     sort_by: str = Query("lift", pattern="^(lift|confidence|support)$"),
     sort_order: str = Query("desc", pattern="^(asc|desc)$"),
     min_lift: float = Query(None, ge=0),
+    network_manager: str = Query("all"),
 ):
-    result = store.get_result()
+    if network_manager and network_manager != "all":
+        result = store.get_result(network_manager)
+    else:
+        result = store.get_result()
     if not result:
         raise HTTPException(status_code=400, detail="请先运行FP-Growth计算")
 
@@ -24,6 +28,19 @@ async def get_rules(
         all_rules.extend(result["round1"]["rules"])
     if round in ("all", "filtered"):
         all_rules.extend(result["round2"]["rules"])
+
+    # Deduplicate: same antecedent+consequent keeps higher temporal_confidence (or lift)
+    seen: dict[tuple, dict] = {}
+    for r in all_rules:
+        key = (tuple(r.get("antecedent_names", [])), tuple(r.get("consequent_names", [])))
+        if key not in seen:
+            seen[key] = r
+        else:
+            old_score = seen[key].get("temporal_confidence", 0) or 0
+            new_score = r.get("temporal_confidence", 0) or 0
+            if new_score > old_score or (new_score == old_score and r["lift"] > seen[key]["lift"]):
+                seen[key] = r
+    all_rules = list(seen.values())
 
     if search:
         q = search.lower()
@@ -50,6 +67,9 @@ async def get_rules(
             support=r["support"],
             confidence=r["confidence"],
             lift=r["lift"],
+            temporal_confidence=r.get("temporal_confidence", 0.0),
+            temporal_lift=r.get("temporal_lift", 0.0),
+            directional_support=r.get("directional_support", 0.0),
         )
         for r in paged
     ]

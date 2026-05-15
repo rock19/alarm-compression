@@ -1,15 +1,21 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from services.store import store
 from services.topology_builder import build_topology
+from services.topology_api import query_multi_neighbors, parse_topology_links
 from schemas.schemas import TopologyResponse
 from pydantic import BaseModel
 from collections import defaultdict
+from typing import Optional
 
 router = APIRouter()
 
 
 class TopologyUpload(BaseModel):
     links: list[dict] = []
+
+
+class NENeighborsRequest(BaseModel):
+    ne_names: list[str] = []
 
 
 physical_links_store: list[dict] = []
@@ -53,3 +59,16 @@ async def get_topology():
 
     graph = build_topology(all_rules, dict(ne_rules), physical_links_store)
     return TopologyResponse(nodes=graph["nodes"], edges=graph["edges"])
+
+
+@router.post("/topology/ne-neighbors")
+async def get_ne_neighbors(req: NENeighborsRequest):
+    """
+    Query physical topology for given NE names from external API.
+    Returns physical links involving these NEs.
+    """
+    if not req.ne_names:
+        return {"links": [], "neighbors": {}}
+    neighbors = await query_multi_neighbors(req.ne_names)
+    links = parse_topology_links(neighbors)
+    return {"links": links, "neighbors": neighbors}

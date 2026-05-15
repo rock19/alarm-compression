@@ -30,11 +30,14 @@ async def upload_excel(files: list[UploadFile] = File(...)):
 
         return UploadResponse(
             total_records=meta["total_records"],
+            raw_total=meta.get("raw_total", meta["total_records"]),
+            filtered_count=meta.get("raw_total", meta["total_records"]) - meta["total_records"],
             unique_ne=meta["unique_ne"],
             unique_alarm_names=meta["unique_alarm_names"],
             time_min=meta["time_min"].isoformat() if meta["time_min"] else None,
             time_max=meta["time_max"].isoformat() if meta["time_max"] else None,
             railway_lines=meta["railway_lines"],
+            network_managers=meta.get("network_managers", []),
             severity_levels=meta["severity_levels"],
             sample_alarm_names=sorted(alarm_names)[:50],
         )

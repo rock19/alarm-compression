@@ -23,7 +23,7 @@ class AnalyzeRuleResponse(BaseModel):
 def build_prompt(req: AnalyzeRuleRequest) -> str:
     ant = "、".join(req.antecedent)
     con = "、".join(req.consequent)
-    return f"""你是一名通信网络告警分析专家。请根据以下关联规则挖掘结果，给出约200字的专业分析。
+    return f"""你是一名通信网络告警分析专家。请根据以下关联规则挖掘结果，给出专业分析，字数在500字以内。
 
 【规则数据】
 - 前件（触发条件）：{ant}
@@ -61,7 +61,7 @@ def call_llm(prompt: str) -> str:
 
         message = client.messages.create(
             model=model,
-            max_tokens=500,
+            max_tokens=1024,
             messages=[{"role": "user", "content": prompt}],
         )
         for block in message.content:

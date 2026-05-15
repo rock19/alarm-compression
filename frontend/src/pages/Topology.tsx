@@ -11,13 +11,25 @@ interface GraphData {
 
 const buildGraphOption = (data: GraphData) => ({
   title: { text: '网元告警关联拓扑', left: 'center' },
+  legend: {
+    data: ['物理网元', '网元', '告警'],
+    bottom: 0,
+  },
   tooltip: {
     trigger: 'item' as const,
     formatter: (p: any) => {
       if (p.dataType === 'edge') {
-        return `${p.data.source} → ${p.data.target}<br/>${p.data.type === 'physical' ? '物理链路: ' + (p.data.link_type || '') : '关联强度: ' + (p.data.weight?.toFixed(2) || '')}`;
+        const ed = p.data.data;
+        const srcName = ed.source?.replace?.('alarm:', '') || ed.source;
+        const tgtName = ed.target?.replace?.('alarm:', '') || ed.target;
+        if (ed.type === 'physical') {
+          return `<b>物理链路</b><br/>${srcName} ↔ ${tgtName}<br/>链路类型: ${ed.link_type || '-'}`;
+        }
+        return `<b>告警关联</b><br/>${srcName} → ${tgtName}<br/>提升度: ${(ed.weight || 0).toFixed(2)}`;
       }
-      return `${p.name}<br/>类型: ${p.data.type}`;
+      const nd = p.data.data || p.data;
+      const typeMap: Record<string, string> = { physical: '物理网元', ne: '网元', alarm: '告警' };
+      return `<b>${nd.name || p.name}</b><br/>类型: ${typeMap[nd.type] || nd.type || '-'}`;
     },
   },
   series: [{
@@ -40,12 +52,21 @@ const buildGraphOption = (data: GraphData) => ({
       target: e.target,
       lineStyle: {
         type: e.style as 'dashed' | 'solid',
-        width: Math.max(1, (e.weight || 1)),
+        width: Math.min(6, Math.max(1, 1 + Math.log10((e.weight || 1) + 1) * 3)),
         color: e.type === 'physical' ? '#5470c6' : '#ee6666',
       },
       data: e,
     })),
-    label: { show: true, fontSize: 10, formatter: (p: any) => p.data.value },
+    label: {
+      show: true,
+      fontSize: 10,
+      overflow: 'truncate',
+      width: 100,
+      formatter: (p: any) => {
+        const v = p.data?.value || p.value || p.name || '';
+        return v.length > 12 ? v.slice(0, 12) + '...' : v;
+      },
+    },
   }],
 });
 

@@ -7,6 +7,8 @@ from api.transactions import router as transactions_router
 from api.stats import router as stats_router
 from api.topology import router as topology_router
 from api.analyze import router as analyze_router
+from api.diagnostic_tree import router as diagnostic_tree_router
+from api.validate import router as validate_router
 
 app = FastAPI(title="Alarm Compression API")
 
@@ -25,6 +27,8 @@ app.include_router(transactions_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
 app.include_router(topology_router, prefix="/api")
 app.include_router(analyze_router, prefix="/api")
+app.include_router(diagnostic_tree_router, prefix="/api")
+app.include_router(validate_router, prefix="/api")
 
 
 @app.get("/health")

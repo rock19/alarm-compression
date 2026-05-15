@@ -47,7 +47,13 @@ async def get_stats():
         for name, buckets in alarm_ts.items()
     }
 
+    # Include results-level network managers
+    nm_with_results = store.get_network_managers()
+    meta_nms = meta.get("network_managers", [])
+    all_nms = sorted(set(nm_with_results) | set(meta_nms))
+
     return StatsResponse(
+        network_managers=all_nms,
         total_alarms=meta["total_records"],
         total_nes=meta["unique_ne"],
         total_alarm_types=meta["unique_alarm_names"],

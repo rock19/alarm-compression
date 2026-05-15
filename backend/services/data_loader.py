@@ -111,6 +111,7 @@ def load_excel(file_path: str) -> tuple[list[dict], dict]:
         "time_min": min((r["发生时间"] for r in records if r["发生时间"]), default=None),
         "time_max": max((r["发生时间"] for r in records if r["发生时间"]), default=None),
         "railway_lines": list(set(r["铁路线"] for r in records if r["铁路线"])),
+        "network_managers": list(set(r["网管"] for r in records if r.get("网管"))),
         "severity_levels": list(set(r["告警级别"] for r in records if r["告警级别"])),
     }
     return records, meta
@@ -203,16 +204,19 @@ def load_excel_multiple(file_paths: list[str]) -> tuple[list[dict], dict]:
         records, _ = load_excel(path)
         all_records.extend(records)
 
+    raw_count = len(all_records)
     all_records.sort(key=lambda r: r.get("发生时间") or datetime.min)
     cleaned = clean_continuous_alarms(all_records)
 
     meta = {
+        "raw_total": raw_count,
         "total_records": len(cleaned),
         "unique_ne": len(set(r["网元"] for r in cleaned if r.get("网元"))),
         "unique_alarm_names": len(set(r["告警名称"] for r in cleaned if r.get("告警名称"))),
         "time_min": min((r["发生时间"] for r in cleaned if r.get("发生时间")), default=None),
         "time_max": max((r["发生时间"] for r in cleaned if r.get("发生时间")), default=None),
         "railway_lines": list(set(r.get("铁路线", "") for r in cleaned if r.get("铁路线"))),
+        "network_managers": list(set(r.get("网管", "") for r in cleaned if r.get("网管"))),
         "severity_levels": list(set(r.get("告警级别", "") for r in cleaned if r.get("告警级别"))),
     }
     return cleaned, meta
