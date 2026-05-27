@@ -1,17 +1,22 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
-import { Layout, Menu } from 'antd';
-import { DashboardOutlined, LinkOutlined, LineChartOutlined, ApartmentOutlined, ForkOutlined, SendOutlined } from '@ant-design/icons';
+import { Layout, Menu, ConfigProvider } from 'antd';
+import zhCN from 'antd/locale/zh_CN';
+import 'dayjs/locale/zh-cn';
+import { DashboardOutlined, LinkOutlined, LineChartOutlined, ApartmentOutlined, ForkOutlined, SendOutlined, SettingOutlined, AlertOutlined } from '@ant-design/icons';
 import Dashboard from './pages/Dashboard';
 import Rules from './pages/Rules';
 import Timeline from './pages/Timeline';
 import Topology from './pages/Topology';
 import DiagnosticTree from './pages/DiagnosticTree';
 import Dispatch from './pages/Dispatch';
+import FiberCutPage from './pages/FiberCutPage';
+import APIConfig from './pages/APIConfig';
 
 const { Sider, Content } = Layout;
 
 function App() {
   return (
+    <ConfigProvider locale={zhCN}>
     <BrowserRouter>
       <Layout style={{ minHeight: '100vh' }}>
         <Sider width={200} theme="dark">
@@ -37,6 +42,12 @@ function App() {
             <Menu.Item key="dispatch" icon={<SendOutlined />}>
               <NavLink to="/dispatch">模拟派单</NavLink>
             </Menu.Item>
+            <Menu.Item key="fiber-cut" icon={<AlertOutlined />}>
+              <NavLink to="/fiber-cut">光缆中断</NavLink>
+            </Menu.Item>
+            <Menu.Item key="api-config" icon={<SettingOutlined />}>
+              <NavLink to="/api-config">接口配置</NavLink>
+            </Menu.Item>
           </Menu>
         </Sider>
         <Content style={{ padding: 24, background: '#f5f5f5' }}>
@@ -47,10 +58,13 @@ function App() {
             <Route path="/topology" element={<Topology />} />
             <Route path="/diagnostic-tree" element={<DiagnosticTree />} />
             <Route path="/dispatch" element={<Dispatch />} />
+            <Route path="/fiber-cut" element={<FiberCutPage />} />
+            <Route path="/api-config" element={<APIConfig />} />
           </Routes>
         </Content>
       </Layout>
     </BrowserRouter>
+    </ConfigProvider>
   );
 }
 

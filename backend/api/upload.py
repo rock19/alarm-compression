@@ -25,6 +25,7 @@ async def upload_excel(files: list[UploadFile] = File(...)):
         if not records:
             raise HTTPException(status_code=400, detail="文件中无有效告警记录")
 
+        store.clear_results()
         alarm_names = list(set(r["告警名称"] for r in records))
         store.set_alarms(records, meta)
 

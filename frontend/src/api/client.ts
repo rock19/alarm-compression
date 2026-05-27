@@ -68,4 +68,11 @@ export const api = {
 
   matchRealtimeAlarms: (alarms: Record<string, unknown>[]) =>
     request('/match-alarms', { method: 'POST', body: JSON.stringify({ alarms }) }),
+
+  analyzeFiberCuts: (workOrders: Record<string, unknown>[]) =>
+    request('/fiber-cut-analysis', { method: 'POST', body: JSON.stringify({ work_orders: workOrders }) }),
+
+  fiberCutDetect: () => request('/fiber-cut-detect', { method: 'POST' }),
+
+  validateStore: () => request('/validate-store', { method: 'POST' }),
 };

@@ -1,7 +1,11 @@
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from services.store import store
 from schemas.schemas import StatsResponse
 from collections import Counter
+import io
+import openpyxl
+from datetime import datetime
 
 router = APIRouter()
 
@@ -66,3 +70,85 @@ async def get_stats():
         time_series=time_series,
         alarm_time_series=alarm_time_series,
     )
+
+
+@router.get("/export-alarms")
+async def export_alarms(
+    limit: int = 10000,
+    network_manager: str = "",
+):
+    """Export alarm data as Excel file."""
+    alarms = store.get_alarms()
+    if not alarms:
+        raise HTTPException(status_code=400, detail="无告警数据")
+
+    if network_manager:
+        alarms = [a for a in alarms if a.get("网管", "") == network_manager]
+    if len(alarms) > limit:
+        alarms = alarms[:limit]
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "历史告警数据"
+
+    headers = ["专业", "网管", "网元", "告警对象", "告警级别", "告警名称", "告警类型",
+               "告警描述", "发生时间", "恢复时间", "铁路线", "站点", "机房", "厂商"]
+    for col, h in enumerate(headers, 1):
+        ws.cell(row=1, column=col, value=h)
+
+    for row_idx, a in enumerate(alarms, 2):
+        for col_idx, h in enumerate(headers, 1):
+            val = a.get(h, "")
+            if isinstance(val, datetime):
+                val = val.isoformat()
+            ws.cell(row=row_idx, column=col_idx, value=val)
+
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    wb.close()
+
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=alarm_data.xlsx"},
+    )
+
+
+@router.get("/alarm-preview")
+async def alarm_preview(
+    page: int = 1,
+    page_size: int = 100,
+    network_manager: str = "",
+    severity: str = "",
+    search: str = "",
+):
+    """Get alarm data preview for Dashboard table."""
+    alarms = store.get_alarms()
+    if not alarms:
+        return {"rows": [], "total": 0}
+
+    if network_manager:
+        alarms = [a for a in alarms if a.get("网管", "") == network_manager]
+    if severity:
+        alarms = [a for a in alarms if a.get("告警级别", "") == severity]
+    if search:
+        q = search.lower()
+        alarms = [a for a in alarms if q in str(a.get("告警名称", "")).lower()
+                  or q in str(a.get("网元", "")).lower()]
+
+    total = len(alarms)
+    start = (page - 1) * page_size
+    rows = []
+    for a in alarms[start:start + page_size]:
+        rows.append({
+            "ne_name": a.get("网元", ""), "alarm_name": a.get("告警名称", ""),
+            "severity": a.get("告警级别", ""), "network_manager": a.get("网管", ""),
+            "alarm_object": a.get("告警对象", ""), "alarm_type": a.get("告警类型", ""),
+            "alarm_desc": a.get("告警描述", ""),
+            "occur_time": a.get("发生时间").isoformat() if a.get("发生时间") else "",
+            "resume_time": a.get("恢复时间").isoformat() if a.get("恢复时间") else "",
+            "railway": a.get("铁路线", ""), "station": a.get("站点", ""),
+        })
+
+    return {"rows": rows, "total": total}

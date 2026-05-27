@@ -101,7 +101,7 @@ async def run_fpgrowth_endpoint(req: FPGrowthRequest):
         raise HTTPException(status_code=400, detail="所有网管数据均不足以挖掘，请检查数据或调整参数")
 
     # Return first result's structure for backward compat
-    first = results[managers[0]] if managers else {"round1": {"rules": []}, "round2": {"rules": []}}
+    first = next(iter(results.values())) if results else {"round1": {"rules": []}, "round2": {"rules": []}}
     return FPGrowthResponse(
         round1=first["round1"],
         round2=first["round2"],

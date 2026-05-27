@@ -7,6 +7,7 @@ from typing import Optional
 import tempfile
 import os
 import asyncio
+import openpyxl
 
 router = APIRouter()
 
@@ -223,8 +224,10 @@ class WorkOrder(BaseModel):
     scenario_name: str
     convergence_alarm: str
     priority: str
+    category: str = ""
     triggered_alarms: list[dict] = []
     matched_rule_count: int
+    max_lift: float = 0
     recommendation: str = ""
 
 
@@ -249,6 +252,42 @@ class ValidateResponse(BaseModel):
     filtered_count: int = 0
     filtered_professions: list[str] = []
     current_dedup_count: int = 0
+
+
+@router.post("/validate-store", response_model=ValidateResponse)
+async def validate_store():
+    """Validate current store alarms against existing rules (no file upload needed)."""
+    alarms = store.get_alarms()
+    if not alarms:
+        raise HTTPException(status_code=400, detail="告警概览中无数据，请先导入告警")
+    # Reuse the file upload validation logic by writing alarms to a temp file
+    import tempfile
+    import openpyxl
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            headers = ["专业","网管","网元","告警对象","告警级别","告警名称","告警类型","告警描述",
+                       "发生时间","恢复时间","恢复状态","关联业务","组织机构","确认状态","确认时间",
+                       "确认人","告警有效性","无效原因","业务使用单位","标记人","标记时间","障碍诊断",
+                       "告警分析","告警编码","子系统确认状态","子系统确认时间","清除时间","清除人",
+                       "铁路线","站点","机房","厂商","告警标识"]
+            for c, h in enumerate(headers, 1):
+                ws.cell(row=1, column=c, value=h)
+            for ri, a in enumerate(alarms, 2):
+                for ci, h in enumerate(headers, 1):
+                    val = a.get(h, "")
+                    if hasattr(val, 'isoformat'):
+                        val = val.isoformat()
+                    ws.cell(row=ri, column=ci, value=val)
+            wb.save(tmp.name)
+            tmp_path = tmp.name
+        return await validate_alarms(UploadFile(filename="store_data.xlsx", file=open(tmp_path, "rb")))
+    finally:
+        if tmp_path:
+            try: os.unlink(tmp_path)
+            except: pass
 
 
 @router.post("/validate", response_model=ValidateResponse)
@@ -413,6 +452,16 @@ async def validate_alarms(file: UploadFile = File(...)):
                         entry["max_lift"] = best_lift
             else:
                 unmatched_names.add(name)
+                # Check if this alarm name appeared in the training data's rules
+                in_training = any(name in (nm_rule_index.get(nm_alarm_nm, {})) for nm_alarm_nm in [nm] if nm in nm_rule_index)
+                # Check if this alarm existed in training data at all (even if no rules)
+                existed_in_training = False
+                # Determine isolation: check if alarm name appears in any rule index
+                isol_label = "孤立事件（历史数据中无共现）"
+                if nm in nm_rule_index and name in nm_rule_index[nm]:
+                    isol_label = "可共现但未达阈值"
+                elif nm in nm_rule_index:
+                    isol_label = "孤立事件（该告警在历史数据中从未与其他告警同现）"
                 unmatched_details.append({
                     "alarm_name": name, "ne_name": ne_name,
                     "display_name": f"{name}",
@@ -425,6 +474,7 @@ async def validate_alarms(file: UploadFile = File(...)):
                     "alarm_desc": alarm.get("alarm_desc", ""),
                     "first_time": alarm.get("first_time", ""),
                     "last_time": alarm.get("last_time", ""),
+                    "isolation": isol_label,
                 })
 
     # Load topology graph
@@ -435,7 +485,7 @@ async def validate_alarms(file: UploadFile = File(...)):
         new_nes = [ne for ne in validation_nes if ne not in ne_graph]
         if new_nes:
             fresh_graph = await build_ne_adjacency_graph(
-                [{"网元": ne, "发生时间": None} for ne in new_nes[:50]]
+                [{"网元": ne, "发生时间": None} for ne in new_nes[:200]]
             )
             for ne, neighbors in fresh_graph.items():
                 ne_graph.setdefault(ne, set()).update(neighbors)
@@ -456,76 +506,159 @@ async def validate_alarms(file: UploadFile = File(...)):
                 if nb not in visited: queue.append(nb)
         return "" if all_nes.issubset(visited) else " (网元非直连，同类型独立发生)"
 
-    # Generate work orders: cluster by connected NEs first
-    all_matched: list[dict] = []
+    from datetime import datetime as dt
+
+    # Build NE→alarm times for time-constrained topology traversal
+    ne_alarm_times: dict[str, list] = defaultdict(list)
     for sc_name, data in scenario_triggered.items():
         for a in data["alarms"]:
-            all_matched.append({**a, "_sc_name": sc_name,
-                                "_sc_max_lift": data["max_lift"],
-                                "_sc_rule_count": data["rule_count"]})
+            t = a.get("time", "")
+            if t:
+                try:
+                    parsed = dt.fromisoformat(t.replace("T", " "))
+                    ne_alarm_times.setdefault(a["ne"], []).append(parsed)
+                except Exception: pass
 
-    # Cluster by connected NEs (iterative traversal: follow chain only through NEs with alarms)
-    if ne_graph and all_matched:
-        nes_with_alarms = set(a["ne"] for a in all_matched)
-        parent = {ne: ne for ne in nes_with_alarms}
+    def has_time_overlap(ne_a: str, ne_b: str, window_m: int = 5) -> bool:
+        """Strict time overlap: only merge NEs if alarms are within 5 minutes, not 30."""
+        ta_list = ne_alarm_times.get(ne_a, []); tb_list = ne_alarm_times.get(ne_b, [])
+        if not ta_list or not tb_list: return False
+        for ta in ta_list:
+            for tb in tb_list:
+                if abs((ta - tb).total_seconds()) / 60 <= window_m: return True
+        return False
+
+    # Generate work orders per diagnostic scenario (different root causes stay separate)
+    work_orders = []
+    for sc_name, data in sorted(scenario_triggered.items(),
+                                 key=lambda x: x[1]["max_lift"], reverse=True):
+        sc_alarms = data["alarms"]
+        if not sc_alarms: continue
+
+        max_lift = data["max_lift"]; rule_count = data["rule_count"]
+        priority = "紧急" if max_lift >= 80 else "重要" if max_lift >= 40 else "普通"
+
+        entry_nm = data.get("network_manager", "")
+        entry_scenarios = nm_scenarios.get(entry_nm, [])
+        sc_detail = next((s for s in entry_scenarios if s["scenario_name"] == sc_name), None)
+        if not sc_detail:
+            for nmk, scs in nm_scenarios.items():
+                sc_detail = next((s for s in scs if s["scenario_name"] == sc_name), None)
+                if sc_detail: break
+        convergence = sc_detail["convergence_alarm"] if sc_detail else sc_name
+
+        # Cluster by NE topology WITHIN this scenario:
+        # iterative traversal: A→B(has alarm+time-close)→C(has alarm+time-close)→D(no alarm, stop)
+        nes_in_sc = set(a["ne"] for a in sc_alarms)
+        parent = {ne: ne for ne in nes_in_sc}
         def find(x):
             while parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
             return x
         def union(x, y):
             rx, ry = find(x), find(y)
             if rx != ry: parent[rx] = ry
-        for ne in nes_with_alarms:
-            queue = [ne]; visited_local = set()
-            while queue:
-                current = queue.pop(0)
-                if current in visited_local: continue
-                visited_local.add(current)
-                for peer in ne_graph.get(current, set()):
-                    if peer in nes_with_alarms and peer not in visited_local:
-                        union(ne, peer); queue.append(peer)
-        cluster_alarms: dict[str, list[dict]] = defaultdict(list)
-        for a in all_matched:
-            cluster_alarms[find(a["ne"])].append(a)
-    else:
-        cluster_alarms = {"_single": all_matched}
 
-    work_orders = []
-    for cluster_id, calist in cluster_alarms.items():
-        sc_counts = Counter(a.get("_sc_name", "") for a in calist)
-        dominant_sc = sc_counts.most_common(1)[0][0] if sc_counts else ""
-        max_lift = max((a.get("_sc_max_lift", 0) for a in calist), default=0)
-        rule_count = max((a.get("_sc_rule_count", 0) for a in calist), default=0)
-        priority = "紧急" if max_lift >= 80 else "重要" if max_lift >= 40 else "普通"
+        if ne_graph:
+            for ne in nes_in_sc:
+                queue = [ne]; visited_local = set()
+                while queue:
+                    cur = queue.pop(0)
+                    if cur in visited_local: continue
+                    visited_local.add(cur)
+                    for peer in ne_graph.get(cur, set()):
+                        if peer in nes_in_sc and peer not in visited_local:
+                            if has_time_overlap(cur, peer):
+                                union(ne, peer); queue.append(peer)
 
-        nm_val = calist[0].get("network_manager", "") if calist else ""
-        entry_nm_data = scenario_triggered.get(dominant_sc, {})
-        entry_nm = entry_nm_data.get("network_manager", nm_val)
-        entry_scenarios = nm_scenarios.get(entry_nm, [])
-        sc_detail = next((s for s in entry_scenarios if s["scenario_name"] == dominant_sc), None)
-        if not sc_detail:
-            for nmk, scs in nm_scenarios.items():
-                sc_detail = next((s for s in scs if s["scenario_name"] == dominant_sc), None)
-                if sc_detail: break
-        convergence = sc_detail["convergence_alarm"] if sc_detail else dominant_sc
+        # Group by NE cluster
+        cluster_groups: dict[str, list[dict]] = defaultdict(list)
+        for a in sc_alarms:
+            cluster_groups[find(a["ne"])].append(a)
 
-        clean = [{k: v for k, v in a.items() if not k.startswith("_sc_")}
-                 for a in sorted(calist, key=lambda a: a.get("time", ""))]
-        cluster_nes = sorted(set(a["ne"] for a in clean))
-        conn_label = check_connectivity(cluster_nes)
-        root_a = clean[0] if clean else {}
+        # For each cluster, split by temporal gap > 30 min
+        for cl_alarms in cluster_groups.values():
+            # Parse all times upfront, handle failures gracefully
+            parsed = []
+            for a in cl_alarms:
+                pt = None
+                t = a.get("time", "") or a.get("first_time", "") or ""
+                if t:
+                    try: pt = dt.fromisoformat(t.replace("T", " "))
+                    except:
+                        try: pt = dt.fromisoformat(t)
+                        except: pass
+                parsed.append((pt, a))
+            clean = [a for _, a in sorted(parsed, key=lambda x: x[0] or dt.min)]
+            time_groups = []
+            if clean:
+                cg = [clean[0]]
+                for a in clean[1:]:
+                    pa = None
+                    t_a = a.get("time", "") or a.get("first_time", "") or ""
+                    if t_a:
+                        try: pa = dt.fromisoformat(t_a.replace("T", " "))
+                        except:
+                            try: pa = dt.fromisoformat(t_a)
+                            except: pass
+                    prev_a = None
+                    t_p = cg[-1].get("time", "") or cg[-1].get("first_time", "") or ""
+                    if t_p:
+                        try: prev_a = dt.fromisoformat(t_p.replace("T", " "))
+                        except:
+                            try: prev_a = dt.fromisoformat(t_p)
+                            except: pass
+                    gap = 99
+                    if pa and prev_a:
+                        gap = abs((pa - prev_a).total_seconds()) / 60
+                    if gap > 30:
+                        time_groups.append(cg); cg = [a]
+                    else:
+                        cg.append(a)
+                time_groups.append(cg)
 
-        work_orders.append(WorkOrder(
-            scenario_name=dominant_sc + conn_label + (
-                f" ({len(cluster_nes)}网元)" if len(cluster_nes) > 1 else ""),
-            convergence_alarm=convergence, priority=priority,
-            triggered_alarms=clean, matched_rule_count=rule_count,
-            recommendation=(
-                f"根因定位: {root_a.get('ne','')} 的 {root_a.get('name','')} 最早触发，"
-                f"可能由 {convergence} 引起。命中 {rule_count} 条规则，"
-                f"最大提升度 {max_lift:.1f}。"
-                + (f" 关联网元: {', '.join(cluster_nes[:5])}" if len(cluster_nes) > 1 else "")
-            ),
-        ))
+            for tg_idx, tg_alarms in enumerate(time_groups):
+                tg_nes = sorted(set(a["ne"] for a in tg_alarms))
+                conn_label = check_connectivity(tg_nes)
+                tg_suffix = f" (事件{tg_idx+1})" if len(time_groups) > 1 else ""
+                root_a = tg_alarms[0] if tg_alarms else {}
+
+                # Compute category from convergence alarm name
+                CAT_RULES = [
+                    ("物理光口故障", ["LOS", "信号丢失", "光物理", "光口"]),
+                    ("SDH远端缺陷", ["RDI", "远端接收失效", "远端缺陷"]),
+                    ("帧同步异常", ["LOF", "帧丢失", "帧失步", "OOF"]),
+                    ("LCAS虚级联故障", ["LCAS", "虚级联", "VCAT", "VCG"]),
+                    ("时钟同步异常", ["时钟", "SYNC", "定时"]),
+                    ("2M/PDH线路故障", ["2M", "PDH", "E1", "AIS", "T_ALOS"]),
+                    ("以太网端口故障", ["以太", "ETH", "网口"]),
+                    ("通道层故障", ["VC12", "VC4", "VC3", "TU", "AU4", "指针", "踪迹", "UNEQ", "SLM"]),
+                    ("复用段故障", ["复用段", "MS_", "MS ", "B2"]),
+                    ("再生段故障", ["再生段", "RS_", "RS ", "B1"]),
+                    ("性能越限", ["越限", "误码", "PM", "UAS", "ES", "SES", "BBE"]),
+                    ("OPU/客户侧故障", ["OPU", "客户信号", "ODU"]),
+                ]
+                wo_category = "其他故障"
+                if convergence:
+                    for cat_name, keywords in CAT_RULES:
+                        for kw in keywords:
+                            if kw in convergence:
+                                wo_category = cat_name
+                                break
+                        if wo_category != "其他故障":
+                            break
+                work_orders.append(WorkOrder(
+                    scenario_name=sc_name + conn_label + tg_suffix + (
+                        f" ({len(tg_nes)}网元)" if len(tg_nes) > 1 else ""),
+                    convergence_alarm=convergence, priority=priority,
+                    category=wo_category,
+                    triggered_alarms=tg_alarms, matched_rule_count=rule_count,
+                    max_lift=max_lift,
+                    recommendation=(
+                        f"根因定位: {root_a.get('ne','')} 的 {root_a.get('name','')} 最早触发，"
+                        f"可能由 {convergence} 引起。"
+                        + (f" 关联网元: {', '.join(tg_nes[:5])}。" if len(tg_nes) > 1 else "")
+                    ),
+                ))
 
     coverage = len(matched_alarms) / len(records) if records else 0
     return ValidateResponse(
