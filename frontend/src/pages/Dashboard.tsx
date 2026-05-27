@@ -57,47 +57,72 @@ export default function Dashboard() {
     if (!queryStart || !queryEnd) { message.warning('请选择起止日期'); return; }
     setQueryLoading(true);
     setProg({ progress: 0, status: '正在提交查询...', loaded: 0, page: 0, total_pages: 0 });
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+
     try {
       const resp = await fetch(
         `http://localhost:8000/api/query-alarms?start_date=${queryStart}&end_date=${queryEnd}&spec_id=${querySpec}`,
         { method: 'POST' }
       );
       const r = await resp.json();
-      if (r.error) { message.error(r.error); setQueryLoading(false); return; }
-      if (!r.task_id) { setQueryLoading(false); return; }
 
-      // Poll progress and completion
-      if (pollRef.current) clearInterval(pollRef.current);
+      // Handle immediate errors from the endpoint
+      if (r.error) {
+        setQueryLoading(false);
+        setProg(p => ({ ...p, status: r.error, progress: 0 }));
+        message.error(r.error);
+        return;
+      }
+      if (!r.task_id) {
+        setQueryLoading(false);
+        message.error('服务端未返回任务ID');
+        return;
+      }
+
+      // Start polling — use closure variable to avoid stale task_id
+      const taskId = r.task_id;
+      const startedAt = Date.now();
+
       pollRef.current = setInterval(async () => {
+        let pr: any;
         try {
-          const pr = await fetch(`http://localhost:8000/api/query-progress/${r.task_id}`).then(r => r.json());
-          setProg({
-            progress: pr.progress || 0,
-            status: pr.status || '',
-            loaded: pr.loaded || 0,
-            page: pr.page || 0,
-            total_pages: pr.total_pages || 0,
-          });
-          if (pr.status === 'done') {
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
-            try {
-              const s = await api.getStats() as StatsData;
-              setStats(s);
-            } catch {}
+          pr = await fetch(`http://localhost:8000/api/query-progress/${taskId}`).then(r => r.json());
+        } catch {
+          return; // Network glitch, retry next interval
+        }
+
+        setProg({
+          progress: pr.progress ?? 0,
+          status: pr.status || '',
+          loaded: pr.loaded || 0,
+          page: pr.page || 0,
+          total_pages: pr.total_pages || 0,
+        });
+
+        if (pr.status === 'done') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setProg(p => ({ ...p, progress: 100, status: '完成' }));
+          try { const s = await api.getStats() as StatsData; setStats(s); } catch {}
+          // Keep progress visible briefly before hiding
+          setTimeout(() => {
             setQueryLoading(false);
             message.success(`导入完成，获取 ${pr.loaded || 0} 条告警`);
-          } else if (pr.status === 'failed') {
-            clearInterval(pollRef.current!);
-            pollRef.current = null;
-            message.error((pr as any).error || '查询失败');
+          }, 800);
+        } else if (pr.status === 'failed') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          const errMsg = (pr as any).error || pr.status || '查询失败';
+          setProg(p => ({ ...p, status: errMsg, progress: 0 }));
+          setTimeout(() => {
             setQueryLoading(false);
-          }
-        } catch {}
+            message.error(errMsg);
+          }, 800);
+        }
       }, 500);
     } catch (e: any) {
-      message.error(e.message);
       setQueryLoading(false);
+      message.error(e.message || '网络请求失败');
     }
   };
 

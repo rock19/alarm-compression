@@ -2,6 +2,7 @@
 External NMS alarm history API client.
 Reads config from api_config.json (managed via /api/api-config).
 """
+import asyncio
 import httpx
 from typing import Optional
 
@@ -64,27 +65,34 @@ async def fetch_ems_list() -> tuple[list[dict], str]:
     if not token:
         return [], "接口未配置Token，请在接口配置页面设置"
     base = _get_base_url()
-    try:
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
-            resp = await client.post(
-                f"{base}/base/resource/platformEmsTmpl",
-                json={"current": 1, "pageSize": 200, "params": {"emsName": None, "specId": None}},
-                headers={"token": token, "Content-Type": "application/json; charset=UTF-8"},
-            )
-            data = resp.json()
-            if data.get("status") != 1:
-                return [], f"EMS列表查询失败: {data.get('msg', '未知错误')}"
-            rows = data.get("data", {}).get("rowData", [])
-            result = [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
-            if not result:
-                return [], "EMS列表为空"
-            return result, ""
-    except httpx.TimeoutException:
-        return [], f"连接NMS服务器超时 ({base})"
-    except httpx.ConnectError:
-        return [], f"无法连接NMS服务器 ({base})，请检查网络和接口配置"
-    except Exception as e:
-        return [], f"获取网管列表失败: {type(e).__name__}: {str(e)[:100]}"
+    url = f"{base}/base/resource/platformEmsTmpl"
+    payload = {"current": 1, "pageSize": 200, "params": {"emsName": None, "specId": None}}
+    headers = {"token": token, "Content-Type": "application/json; charset=UTF-8"}
+
+    last_error = ""
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+                resp = await client.post(url, json=payload, headers=headers)
+                data = resp.json()
+                if data.get("status") != 1:
+                    last_error = f"EMS列表查询失败: {data.get('msg', '未知错误')}"
+                    if 'token' in str(data.get('msg', '')).lower() or '登录' in str(data.get('msg', '')):
+                        return [], last_error  # Token error: don't retry
+                    continue  # Retry on other API errors
+                rows = data.get("data", {}).get("rowData", [])
+                result = [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
+                if not result:
+                    return [], "EMS列表为空"
+                return result, ""
+        except (httpx.TimeoutException, httpx.ConnectError):
+            last_error = f"连接NMS服务器超时 ({base})"
+        except Exception as e:
+            last_error = f"获取网管列表失败: {type(e).__name__}: {str(e)[:100]}"
+        if attempt < 2:
+            await asyncio.sleep(1)
+
+    return [], last_error
 
 
 async def query_alarm_history(
