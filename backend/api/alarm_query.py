@@ -107,7 +107,6 @@ async def _run_query_alarms(
             page_queue: asyncio.Queue = asyncio.Queue()
             failed_pages: list[str] = []
             permanent_failures = 0
-            empty_pages = 0  # Pages that returned no data (legitimately empty)
             WORKERS = 3
             MAX_RETRIES = 3
 
@@ -137,44 +136,39 @@ async def _run_query_alarms(
                         except Exception as e:
                             error = str(e)
                         if rows:
-                            break
-                        # Only retry if there's a real error; empty page with no error = done
-                        if not error:
-                            break
+                            break  # Got data
+                        # No data: retry if attempts left (empty page or error, both should retry)
                         if attempt < MAX_RETRIES - 1:
                             await asyncio.sleep(1 + attempt)
 
                     if rows:
+                        # Success
                         all_rows.extend(rows)
                         pages_done += 1
-                    elif error and retries < MAX_RETRIES:
+                        page_queue.task_done()
+                    elif retries < MAX_RETRIES - 1:
+                        # Still have retries: put back to TAIL
                         await page_queue.put({"eid": eid, "page": page, "retries": retries + 1})
                         page_queue.task_done()
                         await asyncio.sleep(0.3)
-                        continue
                     else:
-                        # Empty page or permanent error → done
-                        if error:
-                            permanent_failures += 1
-                            if permanent_failures <= 20:
-                                failed_pages.append(f"ems={eid} p={page}: {error[:80]}")
-                        else:
-                            empty_pages += 1
+                        # Final retry exhausted: mark done (permanent fail)
+                        permanent_failures += 1
                         pages_done += 1
-
-                    page_queue.task_done()
+                        page_queue.task_done()
+                        if permanent_failures <= 20:
+                            reason = error[:80] if error else f"空页(重试{MAX_RETRIES}次)"
+                            failed_pages.append(f"ems={eid} p={page}: {reason}")
                     await asyncio.sleep(0.1)
 
-                    if pages_done % 10 == 0 or pages_done >= grand_total_pages:
-                        pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
-                        status = f"拉取 {pages_done}/{grand_total_pages} 页 ({len(all_rows)}条"
-                        if empty_pages:
-                            status += f", {empty_pages}空页"
-                        if permanent_failures:
-                            status += f", {permanent_failures}失败"
-                        status += f", 队列{page_queue.qsize()})"
-                        _update_progress(task_id, min(90, pct), status,
-                            loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
+                    # Update progress frequently so user sees active work
+                    pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
+                    status = f"拉取 {pages_done}/{grand_total_pages} 页 ({len(all_rows)}条"
+                    if permanent_failures:
+                        status += f", {permanent_failures}永久失败"
+                    status += f", 队列{page_queue.qsize()})"
+                    _update_progress(task_id, min(90, pct), status,
+                        loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
             # Start workers
             worker_tasks = [asyncio.create_task(worker(i)) for i in range(WORKERS)]
@@ -190,8 +184,6 @@ async def _run_query_alarms(
             expected = total
             shortfall = expected - len(all_rows)
             status = f"拉取完成: {len(all_rows)}条"
-            if empty_pages:
-                status += f", {empty_pages}空页"
             if shortfall > 0:
                 status += f" (预期{expected}, 缺口{shortfall})"
             if permanent_failures:
