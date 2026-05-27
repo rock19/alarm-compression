@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 import traceback
-from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Query
 from services.alarm_api import fetch_all_alarms, convert_alarm_record, fetch_ems_list, fetch_spec_list, query_current_alarms, convert_current_alarm, query_alarm_history
 from services.store import store
 from pydantic import BaseModel
@@ -48,18 +48,17 @@ async def _run_query_alarms(
     sdt = f"{start_date} 00:00:00"
     edt = f"{end_date} 23:59:59"
 
-    # Create shared httpx client upfront — used by fetch_ems_list and all page queries
-    import httpx
-    shared_client = httpx.AsyncClient(
-        verify=False, timeout=120.0,
-        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-    )
-
     try:
+        _update_progress(task_id, 0, "任务启动...")
+        import httpx
+        shared_client = httpx.AsyncClient(
+            verify=False, timeout=120.0,
+            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+        )
         # Stage 1: Fetch EMS list (0-5%)
         if not ems_ids:
             _update_progress(task_id, 0, "正在获取网管列表...")
-            ems_list, ems_error = await fetch_ems_list(shared_client)
+            ems_list, ems_error = await fetch_ems_list(spec_id, shared_client)
             if ems_error:
                 _update_progress(task_id, 0, "failed", error=ems_error)
                 return
@@ -92,6 +91,7 @@ async def _run_query_alarms(
             total += ems_total
             grand_total_pages += ems_pages
             pages_done += 1
+            print(f"[alarm_query] EMS {eid}: page1={len(rows)}rows, total={ems_total}, pages={ems_pages}", flush=True)
             _update_progress(task_id, 2 + int((ei + 1) / len(eids) * 3),
                 f"获取页数: {ei+1}/{len(eids)} (已{len(all_rows)}条)",
                 loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
@@ -147,9 +147,11 @@ async def _run_query_alarms(
                 _update_progress(task_id, 90 + int(min(7, i / max(raw_count, 1) * 7)),
                     f"转换中: {i}/{raw_count}")
 
+        print(f"[alarm_query] Convert: {len(records)}/{raw_count} valid, filtered {raw_count - len(records)}")
         _update_progress(task_id, 97, f"转换完成: {len(records)}/{raw_count} 条有效")
 
         if not records:
+            print(f"[alarm_query] WARNING: 0 valid records! all_rows has {raw_count} raw items. Sample: {all_rows[0] if all_rows else 'EMPTY'}")
             _update_progress(task_id, 100, "done", loaded=0, total=total)
             return
 
@@ -183,17 +185,14 @@ async def _run_query_alarms(
 
 @router.post("/query-alarms", response_model=AlarmQueryResponse)
 async def query_alarms(
-    background_tasks: BackgroundTasks,
     start_date: str = Query(..., description="起始日期 YYYY-MM-DD（必填）"),
     end_date: str = Query(..., description="结束日期 YYYY-MM-DD（必填）"),
     spec_id: str = Query("3", description="专业ID（3=传输系统,4=GSM-R等）"),
     ems_ids: str = Query("", description="网管主键，多个英文逗号分隔，留空则自动获取全部"),
 ):
-    """Start a background query for historical alarms. Returns task_id immediately."""
+    """Start alarm query in background. Returns task_id immediately."""
     task_id = _init_task("正在获取网管列表...")
-    background_tasks.add_task(
-        _run_query_alarms, task_id, start_date, end_date, spec_id, ems_ids
-    )
+    asyncio.create_task(_run_query_alarms(task_id, start_date, end_date, spec_id, ems_ids))
     return AlarmQueryResponse(task_id=task_id, loaded=0)
 
 

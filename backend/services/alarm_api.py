@@ -59,14 +59,14 @@ async def fetch_spec_list() -> list[dict]:
     ]
 
 
-async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> tuple[list[dict], str]:
-    """Fetch EMS (network manager) list from NMS. Returns (list, error_message)."""
+async def fetch_ems_list(spec_id: str = "", shared_client: Optional[httpx.AsyncClient] = None) -> tuple[list[dict], str]:
+    """Fetch EMS (network manager) list from NMS, optionally filtered by spec_id. Returns (list, error_message)."""
     token = await _get_token()
     if not token:
         return [], "接口未配置Token，请在接口配置页面设置"
     base = _get_base_url()
     url = f"{base}/base/resource/platformEmsTmpl"
-    payload = {"current": 1, "pageSize": 200, "params": {"emsName": None, "specId": None}}
+    payload = {"current": 1, "pageSize": 200, "params": {"emsName": None, "specId": spec_id or None}}
     headers = {"token": token, "Content-Type": "application/json; charset=UTF-8"}
 
     async def _do_fetch(client: httpx.AsyncClient):
