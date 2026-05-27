@@ -69,130 +69,70 @@ async def _run_query_alarms(
                 _update_progress(task_id, 0, "failed", error="EMS列表为空，请检查接口配置")
                 return
 
-        # Stage 2: Query pages
-            # Stage 2a: Query page 1 of ALL EMS first to get total counts (0-5%)
-            PAGE_SIZE = 100  # API limit is 100 per page
-            all_rows = []
-            total = 0
-            eids = [e.strip() for e in ems_ids.split(",") if e.strip()]
-            _update_progress(task_id, 2, f"共 {len(eids)} 个网管，获取页数信息...")
+        # Stage 2: Sequential per-EMS page fetching (2-90%)
+        PAGE_SIZE = 100
+        all_rows = []
+        total = 0
+        grand_total_pages = 0
+        pages_done = 0
+        eids = [e.strip() for e in ems_ids.split(",") if e.strip()]
+        MAX_RETRIES = 3
 
-            ems_info = []  # [(eid, total_pages, first_page_rows)]
-            for ei, eid in enumerate(eids):
-                first_result = await query_alarm_history(sdt, edt, spec_id, eid, 1, PAGE_SIZE, client=shared_client)
-                first_rows = first_result.get("rows", [])
-                ems_total = first_result.get("total", 0)
-                ems_pages = (ems_total + PAGE_SIZE - 1) // PAGE_SIZE if ems_total else 0
-                ems_info.append((eid, ems_pages, first_rows))
-                if first_rows:
-                    all_rows.extend(first_rows)
-                total += ems_total
-                _update_progress(task_id, 2 + int((ei + 1) / len(eids) * 3),
-                    f"获取页数: {ei+1}/{len(eids)}")
+        # First pass: get page 1 of each EMS to know total pages
+        _update_progress(task_id, 2, f"共 {len(eids)} 个网管，获取页数信息...")
+        ems_info = []
+        for ei, eid in enumerate(eids):
+            result = await query_alarm_history(sdt, edt, spec_id, eid, 1, PAGE_SIZE, client=shared_client)
+            rows = result.get("rows", [])
+            ems_total = result.get("total", 0)
+            ems_pages = (ems_total + PAGE_SIZE - 1) // PAGE_SIZE if ems_total else 0
+            ems_info.append((eid, ems_pages, rows))
+            if rows:
+                all_rows.extend(rows)
+            total += ems_total
+            grand_total_pages += ems_pages
+            pages_done += 1
+            _update_progress(task_id, 2 + int((ei + 1) / len(eids) * 3),
+                f"获取页数: {ei+1}/{len(eids)} (已{len(all_rows)}条)",
+                loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
-            # Compute total pages (page 1 already done for each EMS with data)
-            grand_total_pages = sum(info[1] for info in ems_info)
-            pages_done = sum(1 for info in ems_info if info[1] > 0)
+        # Second pass: fetch remaining pages of each EMS sequentially
+        for ei, (eid, ems_pages, _first_rows) in enumerate(ems_info):
+            for page in range(2, ems_pages + 1):
+                rows = []
+                error = ""
+                for attempt in range(MAX_RETRIES):
+                    try:
+                        result = await query_alarm_history(
+                            sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client
+                        )
+                        rows = result.get("rows", [])
+                        error = result.get("error", "")
+                    except Exception as e:
+                        error = str(e)
+                    if rows or not error:
+                        break
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(1)
 
-            _update_progress(task_id, 5, f"总计 {grand_total_pages} 页，3线程拉取...",
-                total_pages=grand_total_pages)
+                if rows:
+                    all_rows.extend(rows)
 
-            # Stage 2b: Global queue + worker pool (5-90%)
-            # ┌──────────────┐     ┌──────────┐     ┌──────────────┐
-            # │  page_queue  │────▶│ Worker 0 │────▶│ pages_done++ │
-            # │ (ems,page)   │────▶│ Worker 1 │────▶│ all_rows++   │
-            # │              │────▶│ Worker 2 │     │ progress     │
-            # │ 失败→队尾    │◀────│          │     └──────────────┘
-            # └──────────────┘     └──────────┘
-            page_queue: asyncio.Queue = asyncio.Queue()
-            failed_pages: list[str] = []
-            permanent_failures = 0
-            WORKERS = 3
-            MAX_RETRIES = 3
+                pages_done += 1
+                pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
+                _update_progress(task_id, min(90, pct),
+                    f"网管{ei+1}/{len(eids)} 第{page}/{ems_pages}页"
+                    + (f" [{len(rows)}条]" if rows else " [空]")
+                    + f" (共{len(all_rows)}条, {pages_done}/{grand_total_pages}页)",
+                    loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
-            # Fill queue: all remaining pages from all EMSs
-            for eid, ems_pages, _first_rows in ems_info:
-                for page in range(2, ems_pages + 1):
-                    await page_queue.put({"eid": eid, "page": page, "retries": 0})
-            total_enqueued = page_queue.qsize()
-            print(f"[alarm_query] Queue filled: {total_enqueued} pages from {len(ems_info)} EMSs")
-
-            async def worker(wid: int):
-                """Pull page from queue, fetch, retry on failure, loop until sentinel."""
-                nonlocal pages_done, permanent_failures
-                while True:
-                    item = await page_queue.get()
-                    eid, page, retries = item["eid"], item["page"], item["retries"]
-
-                    rows = []
-                    error = ""
-                    for attempt in range(MAX_RETRIES):
-                        try:
-                            result = await query_alarm_history(
-                                sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client
-                            )
-                            rows = result.get("rows", [])
-                            error = result.get("error", "")
-                        except Exception as e:
-                            error = str(e)
-                        if rows:
-                            break  # Got data
-                        # No data: retry if attempts left (empty page or error, both should retry)
-                        if attempt < MAX_RETRIES - 1:
-                            await asyncio.sleep(1 + attempt)
-
-                    if rows:
-                        # Success
-                        all_rows.extend(rows)
-                        pages_done += 1
-                        page_queue.task_done()
-                    elif retries < MAX_RETRIES - 1:
-                        # Still have retries: put back to TAIL
-                        await page_queue.put({"eid": eid, "page": page, "retries": retries + 1})
-                        page_queue.task_done()
-                        await asyncio.sleep(0.3)
-                    else:
-                        # Final retry exhausted: mark done (permanent fail)
-                        permanent_failures += 1
-                        pages_done += 1
-                        page_queue.task_done()
-                        if permanent_failures <= 20:
-                            reason = error[:80] if error else f"空页(重试{MAX_RETRIES}次)"
-                            failed_pages.append(f"ems={eid} p={page}: {reason}")
-                    await asyncio.sleep(0.1)
-
-                    # Update progress frequently so user sees active work
-                    pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
-                    status = f"拉取 {pages_done}/{grand_total_pages} 页 ({len(all_rows)}条"
-                    if permanent_failures:
-                        status += f", {permanent_failures}永久失败"
-                    status += f", 队列{page_queue.qsize()})"
-                    _update_progress(task_id, min(90, pct), status,
-                        loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
-
-            # Start workers
-            worker_tasks = [asyncio.create_task(worker(i)) for i in range(WORKERS)]
-
-            # Wait for all pages to be processed
-            await page_queue.join()
-
-            # Stop workers
-            for w in worker_tasks:
-                w.cancel()
-            await asyncio.gather(*worker_tasks, return_exceptions=True)
-
-            expected = total
-            shortfall = expected - len(all_rows)
-            status = f"拉取完成: {len(all_rows)}条"
-            if shortfall > 0:
-                status += f" (预期{expected}, 缺口{shortfall})"
-            if permanent_failures:
-                status += f", 永久失败{permanent_failures}页"
-                print(f"[alarm_query] PERMANENT FAILURES: {permanent_failures}, shortfall={shortfall}")
-                for fp in failed_pages[:20]:
-                    print(f"  {fp}")
-            print(f"[alarm_query] Done: {len(all_rows)} rows, {pages_done}/{grand_total_pages} pages, expected={expected}")
-            _update_progress(task_id, 90, status)
+        expected = total
+        shortfall = expected - len(all_rows)
+        status = f"拉取完成: {len(all_rows)}条"
+        if shortfall > 0:
+            status += f" (API声称{expected}, 缺口{shortfall})"
+        print(f"[alarm_query] Done: {len(all_rows)} rows, {pages_done}/{grand_total_pages} pages, api_total={expected}")
+        _update_progress(task_id, 90, status)
 
         # Stage 3: Convert data (90-97%)
         _update_progress(task_id, 90, "正在转换数据...")
