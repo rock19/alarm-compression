@@ -48,11 +48,18 @@ async def _run_query_alarms(
     sdt = f"{start_date} 00:00:00"
     edt = f"{end_date} 23:59:59"
 
+    # Create shared httpx client upfront — used by fetch_ems_list and all page queries
+    import httpx
+    shared_client = httpx.AsyncClient(
+        verify=False, timeout=30.0,
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
+
     try:
         # Stage 1: Fetch EMS list (0-5%)
         if not ems_ids:
             _update_progress(task_id, 0, "正在获取网管列表...")
-            ems_list, ems_error = await fetch_ems_list()
+            ems_list, ems_error = await fetch_ems_list(shared_client)
             if ems_error:
                 _update_progress(task_id, 0, "failed", error=ems_error)
                 return
@@ -62,14 +69,7 @@ async def _run_query_alarms(
                 _update_progress(task_id, 0, "failed", error="EMS列表为空，请检查接口配置")
                 return
 
-        # Create shared httpx client with connection pooling (avoids TLS handshake per request)
-        import httpx
-        shared_client = httpx.AsyncClient(
-            verify=False, timeout=30.0,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
-
-        try:
+        # Stage 2: Query pages
             # Stage 2a: Query page 1 of ALL EMS first to get total counts (0-5%)
             PAGE_SIZE = 100  # API limit is 100 per page
             all_rows = []
@@ -194,9 +194,6 @@ async def _run_query_alarms(
             print(f"[alarm_query] Done: {len(all_rows)} rows, {pages_done}/{grand_total_pages} pages, expected={expected}")
             _update_progress(task_id, 90, status)
 
-        finally:
-            await shared_client.aclose()
-
         # Stage 3: Convert data (90-97%)
         _update_progress(task_id, 90, "正在转换数据...")
 
@@ -206,7 +203,6 @@ async def _run_query_alarms(
             rec = convert_alarm_record(raw)
             if rec.get("网元") and rec.get("告警名称") and rec.get("发生时间"):
                 records.append(rec)
-            # Update every 100 records
             if i % 100 == 0:
                 _update_progress(task_id, 90 + int(min(7, i / max(raw_count, 1) * 7)),
                     f"转换中: {i}/{raw_count}")
@@ -241,6 +237,8 @@ async def _run_query_alarms(
     except Exception as e:
         _update_progress(task_id, 0, "failed", error=str(e), loaded=0)
         traceback.print_exc()
+    finally:
+        await shared_client.aclose()
 
 
 @router.post("/query-alarms", response_model=AlarmQueryResponse)

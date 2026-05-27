@@ -59,7 +59,7 @@ async def fetch_spec_list() -> list[dict]:
     ]
 
 
-async def fetch_ems_list() -> tuple[list[dict], str]:
+async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> tuple[list[dict], str]:
     """Fetch EMS (network manager) list from NMS. Returns (list, error_message)."""
     token = await _get_token()
     if not token:
@@ -69,28 +69,29 @@ async def fetch_ems_list() -> tuple[list[dict], str]:
     payload = {"current": 1, "pageSize": 200, "params": {"emsName": None, "specId": None}}
     headers = {"token": token, "Content-Type": "application/json; charset=UTF-8"}
 
+    async def _do_fetch(client: httpx.AsyncClient):
+        resp = await client.post(url, json=payload, headers=headers)
+        data = resp.json()
+        if data.get("status") != 1:
+            return [], f"EMS列表查询失败: {data.get('msg', '未知错误')}"
+        rows = data.get("data", {}).get("rowData", [])
+        result = [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
+        if not result:
+            return [], "EMS列表为空"
+        return result, ""
+
     last_error = ""
     for attempt in range(3):
         try:
+            if shared_client:
+                return await _do_fetch(shared_client)
             async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
-                resp = await client.post(url, json=payload, headers=headers)
-                data = resp.json()
-                if data.get("status") != 1:
-                    last_error = f"EMS列表查询失败: {data.get('msg', '未知错误')}"
-                    if 'token' in str(data.get('msg', '')).lower() or '登录' in str(data.get('msg', '')):
-                        return [], last_error  # Token error: don't retry
-                    continue  # Retry on other API errors
-                rows = data.get("data", {}).get("rowData", [])
-                result = [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
-                if not result:
-                    return [], "EMS列表为空"
-                return result, ""
-        except (httpx.TimeoutException, httpx.ConnectError):
-            last_error = f"连接NMS服务器超时 ({base})"
+                return await _do_fetch(client)
         except Exception as e:
-            last_error = f"获取网管列表失败: {type(e).__name__}: {str(e)[:100]}"
-        if attempt < 2:
-            await asyncio.sleep(1)
+            last_error = f"连接NMS失败({type(e).__name__}): {str(e)[:120]}"
+            print(f"[alarm_api] fetch_ems_list attempt {attempt+1}/3: {last_error}")
+            if attempt < 2:
+                await asyncio.sleep(1)
 
     return [], last_error
 
