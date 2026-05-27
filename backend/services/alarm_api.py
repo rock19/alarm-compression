@@ -40,7 +40,7 @@ async def fetch_spec_list() -> list[dict]:
     if not token:
         return []
     try:
-        async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
+        async with httpx.AsyncClient(verify=False, timeout=120.0) as client:
             resp = await client.post(
                 f"https://{cfg.base_url.split('://')[-1] if '://' in cfg.base_url else '172.17.3.166'}:8000/DESApp/C/basic/spec/getSpecList",
                 headers={"token": token, "Content-Type": "application/json"},
@@ -218,7 +218,7 @@ async def query_current_alarms(ems_id: str) -> list[dict]:
         return []
     base = _get_base_url()
     try:
-        async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+        async with httpx.AsyncClient(verify=False, timeout=120.0) as client:
             resp = await client.get(
                 f"{base}/alarmManage/QueryCurrentAlarmRec",
                 params={"emsId": ems_id},
