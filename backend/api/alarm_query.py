@@ -51,7 +51,7 @@ async def _run_query_alarms(
     # Create shared httpx client upfront — used by fetch_ems_list and all page queries
     import httpx
     shared_client = httpx.AsyncClient(
-        verify=False, timeout=30.0,
+        verify=False, timeout=60.0,
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     )
 

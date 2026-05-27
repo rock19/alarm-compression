@@ -70,7 +70,10 @@ async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> t
     headers = {"token": token, "Content-Type": "application/json; charset=UTF-8"}
 
     async def _do_fetch(client: httpx.AsyncClient):
+        t0 = __import__('time').time()
         resp = await client.post(url, json=payload, headers=headers)
+        elapsed = __import__('time').time() - t0
+        print(f"[alarm_api] fetch_ems_list HTTP {resp.status_code} in {elapsed:.1f}s")
         data = resp.json()
         if data.get("status") != 1:
             return [], f"EMS列表查询失败: {data.get('msg', '未知错误')}"
@@ -85,13 +88,13 @@ async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> t
         try:
             if shared_client:
                 return await _do_fetch(shared_client)
-            async with httpx.AsyncClient(verify=False, timeout=30.0) as client:
+            async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
                 return await _do_fetch(client)
         except Exception as e:
-            last_error = f"连接NMS失败({type(e).__name__}): {str(e)[:120]}"
-            print(f"[alarm_api] fetch_ems_list attempt {attempt+1}/3: {last_error}")
+            last_error = f"连接NMS失败({type(e).__name__}, {attempt+1}/3): {str(e)[:120]}"
+            print(f"[alarm_api] {last_error}")
             if attempt < 2:
-                await asyncio.sleep(1)
+                await asyncio.sleep(2)
 
     return [], last_error
 
