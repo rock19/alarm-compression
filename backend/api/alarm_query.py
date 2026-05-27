@@ -94,124 +94,95 @@ async def _run_query_alarms(
             grand_total_pages = sum(info[1] for info in ems_info)
             pages_done = sum(1 for info in ems_info if info[1] > 0)  # page 1 already done for each EMS
 
-            _update_progress(task_id, 5, f"总计 {grand_total_pages} 页，5线程队列拉取...",
+            _update_progress(task_id, 5, f"总计 {grand_total_pages} 页，逐EMS拉取...",
                 total_pages=grand_total_pages)
 
-            # Stage 2b: Queue-based worker pool (5-90%)
-            # ┌──────────┐    ┌──────────┐    ┌──────────┐
-            # │  Queue   │───▶│ Worker 1 │───▶│  Done    │
-            # │ (pages)  │───▶│ Worker 2 │───▶│ (success)│
-            # │          │───▶│   ...    │   │          │
-            # └──────────┘    └──────────┘    └──────────┘
-            # Failed pages (with retries left) go back to Queue
+            # Stage 2b: Per-EMS page fetching with intra-EMS queue+workers (5-90%)
+            # Process EMS sequentially to keep empty-streak detection accurate
             MAX_RETRIES = 2
-            WORKERS = 2  # Keep low to avoid overwhelming NMS database with large OFFSET queries
-
-            task_queue: asyncio.Queue = asyncio.Queue()
-            failed_pages: list[str] = []
+            MAX_EMPTY_STREAK = 5  # Consecutive empty pages → stop this EMS
             permanent_failures = 0
-            # Track consecutive empty pages per EMS for early termination
-            ems_empty_streak: dict[str, int] = {}
-            MAX_EMPTY_STREAK = 5  # Stop fetching this EMS after 5 consecutive empty pages
+            valid_pages = pages_done  # Pages that returned data (starts with page-1 count)
+            failed_pages: list[str] = []
 
-            # Fill queue with all remaining pages
-            for eid, ems_pages, _first_rows in ems_info:
+            for ei, (eid, ems_pages, _first_rows) in enumerate(ems_info):
+                if ems_pages <= 1:
+                    continue  # No more pages for this EMS
+
+                task_queue: asyncio.Queue = asyncio.Queue()
                 for page in range(2, ems_pages + 1):
                     await task_queue.put((eid, page, 0))
 
-            total_items = task_queue.qsize()
+                empty_streak = 0
+                ems_drained = False
+                WORKERS = 2 if ems_pages > 10 else 1
 
-            async def worker(worker_id: int):
-                """Continuously pull pages from queue until empty."""
-                nonlocal pages_done, permanent_failures
-                while True:
-                    try:
-                        eid, page, retries = await task_queue.get()
-                    except asyncio.CancelledError:
-                        break
-                    except Exception:
-                        break
-
-                    # Fetch with retry on actual errors only
-                    rows = []
-                    error = ""
-                    for attempt in range(MAX_RETRIES):
+                async def worker(wid: int):
+                    nonlocal pages_done, valid_pages, permanent_failures, empty_streak, ems_drained
+                    while not ems_drained:
                         try:
-                            result = await query_alarm_history(
-                                sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client
-                            )
-                            rows = result.get("rows", [])
-                            error = result.get("error", "")
-                        except Exception as e:
-                            error = str(e)
-
-                        # Empty rows with no error = legitimately empty page (API limit etc)
-                        if not error:
+                            item = task_queue.get_nowait()
+                        except asyncio.QueueEmpty:
                             break
-                        # Has error: retry
-                        if attempt < MAX_RETRIES - 1:
-                            await asyncio.sleep(1 + attempt)
+                        eid_item, page, retries = item
 
-                    # Categorize result
-                    if rows:
-                        all_rows.extend(rows)
-                        pages_done += 1
-                        ems_empty_streak[eid] = 0  # Reset streak on data
-                    elif not error:
-                        # Empty page: track streak, early-terminate if too many consecutive empties
-                        pages_done += 1
-                        streak = ems_empty_streak.get(eid, 0) + 1
-                        ems_empty_streak[eid] = streak
-                        if streak >= MAX_EMPTY_STREAK:
-                            # Drain remaining pages for this EMS from queue
-                            drained = 0
-                            remaining = []
-                            while not task_queue.empty():
-                                try:
-                                    item = task_queue.get_nowait()
-                                    if item[0] == eid:
-                                        pages_done += 1
-                                        task_queue.task_done()
+                        rows = []
+                        error = ""
+                        for attempt in range(MAX_RETRIES):
+                            try:
+                                result = await query_alarm_history(
+                                    sdt, edt, spec_id, eid_item, page, PAGE_SIZE, client=shared_client
+                                )
+                                rows = result.get("rows", [])
+                                error = result.get("error", "")
+                            except Exception as e:
+                                error = str(e)
+                            if not error:
+                                break
+                            if attempt < MAX_RETRIES - 1:
+                                await asyncio.sleep(1 + attempt)
+
+                        if rows:
+                            all_rows.extend(rows)
+                            empty_streak = 0
+                            pages_done += 1
+                            valid_pages += 1
+                        elif not error:
+                            empty_streak += 1
+                            pages_done += 1
+                            if empty_streak >= MAX_EMPTY_STREAK:
+                                drained = 0
+                                while not task_queue.empty():
+                                    try:
+                                        task_queue.get_nowait()
                                         drained += 1
-                                    else:
-                                        remaining.append(item)
-                                except asyncio.QueueEmpty:
-                                    break
-                            for item in remaining:
-                                await task_queue.put(item)
-                            if drained:
-                                print(f"[alarm_query] EMS {eid}: {streak} consecutive empties, drained {drained} remaining pages")
-                    elif retries < MAX_RETRIES:
-                        await task_queue.put((eid, page, retries + 1))
-                        await asyncio.sleep(0.5)
-                    else:
-                        permanent_failures += 1
-                        pages_done += 1
-                        if permanent_failures <= 20:
-                            failed_pages.append(f"ems={eid} p={page}: {error[:80]}")
-                    task_queue.task_done()
-                    await asyncio.sleep(0.15)  # Space requests to avoid DB pressure
+                                        pages_done += 1
+                                    except asyncio.QueueEmpty:
+                                        break
+                                ems_drained = True
+                                if drained:
+                                    print(f"[alarm_query] EMS {eid}: {empty_streak} empties, skipped {drained} pages")
+                        elif retries < MAX_RETRIES:
+                            await task_queue.put((eid_item, page, retries + 1))
+                        else:
+                            permanent_failures += 1
+                            pages_done += 1
+                            if permanent_failures <= 20:
+                                failed_pages.append(f"ems={eid_item} p={page}: {error[:80]}")
+                        await asyncio.sleep(0.15)
 
-                    # Update progress every 10 pages
-                    if pages_done % 10 == 0 or pages_done >= grand_total_pages:
-                        pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
-                        status = f"拉取 {pages_done}/{grand_total_pages} 页 ({len(all_rows)}条"
-                        if permanent_failures:
-                            status += f", {permanent_failures}失败"
-                        status += f", 队列{task_queue.qsize()})"
-                        _update_progress(task_id, min(90, pct), status,
-                            loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
+                        if pages_done % 20 == 0 or pages_done >= grand_total_pages:
+                            pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
+                            status = f"EMS{ei+1}/{len(eids)} 拉取 {valid_pages}有效/{pages_done}总计 页 ({len(all_rows)}条"
+                            if permanent_failures:
+                                status += f", {permanent_failures}失败"
+                            status += ")"
+                            _update_progress(task_id, min(90, pct), status,
+                                loaded=len(all_rows), page=valid_pages, total_pages=grand_total_pages)
 
-            # Start workers
-            workers = [asyncio.create_task(worker(i)) for i in range(WORKERS)]
-
-            # Wait for all queue items to be processed
-            await task_queue.join()
-
-            # Cancel workers and wait for them to finish
-            for w in workers:
-                w.cancel()
-            await asyncio.gather(*workers, return_exceptions=True)
+                # Run workers
+                worker_tasks = [asyncio.create_task(worker(i)) for i in range(WORKERS)]
+                await asyncio.gather(*worker_tasks)
 
             expected = total
             shortfall = expected - len(all_rows)
@@ -224,7 +195,7 @@ async def _run_query_alarms(
                 print(f"[alarm_query] PERMANENT FAILURES: {permanent_failures} pages, shortfall={shortfall}")
                 for fp in failed_pages[:20]:
                     print(f"  {fp}")
-            print(f"[alarm_query] Done: {len(all_rows)} rows from {total_items} queue items")
+            print(f"[alarm_query] Done: {len(all_rows)} rows, {pages_done}/{grand_total_pages} pages, expected={expected}, shortfall={shortfall}")
             _update_progress(task_id, 90, status)
 
         finally:
