@@ -58,7 +58,7 @@ async def _run_query_alarms(
         # Stage 1: Fetch EMS list (0-5%)
         if not ems_ids:
             _update_progress(task_id, 0, "正在获取网管列表...")
-            ems_list, ems_error = await fetch_ems_list(spec_id, shared_client)
+            ems_list, ems_error = await fetch_ems_list(shared_client)
             if ems_error:
                 _update_progress(task_id, 0, "failed", error=ems_error)
                 return
@@ -192,7 +192,7 @@ async def query_alarms(
 ):
     """Start alarm query in background. Returns task_id immediately."""
     task_id = _init_task("正在获取网管列表...")
-    asyncio.create_task(_run_query_alarms(task_id, start_date, end_date, spec_id, ems_ids))
+    asyncio.ensure_future(_run_query_alarms(task_id, start_date, end_date, spec_id, ems_ids))
     return AlarmQueryResponse(task_id=task_id, loaded=0)
 
 
