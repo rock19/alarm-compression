@@ -123,10 +123,8 @@ async def query_alarm_history(
     }
 
     async def _do_query(cl: httpx.AsyncClient):
-        resp = await cl.get(
-            f"{base}/alarmManage/QueryAlarmRecord",
-            params=params, headers={"token": token},
-        )
+        url = f"{base}/alarmManage/QueryAlarmRecord"
+        resp = await cl.get(url, params=params, headers={"token": token})
         data = resp.json()
         if data.get("status") == 1:
             inner = data.get("data", {})

@@ -91,7 +91,6 @@ async def _run_query_alarms(
             total += ems_total
             grand_total_pages += ems_pages
             pages_done += 1
-            print(f"[alarm_query] EMS {eid}: page1={len(rows)}rows, total={ems_total}, pages={ems_pages}", flush=True)
             _update_progress(task_id, 2 + int((ei + 1) / len(eids) * 3),
                 f"获取页数: {ei+1}/{len(eids)} (已{len(all_rows)}条)",
                 loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
@@ -191,8 +190,20 @@ async def query_alarms(
     ems_ids: str = Query("", description="网管主键，多个英文逗号分隔，留空则自动获取全部"),
 ):
     """Start alarm query in background. Returns task_id immediately."""
+    import threading
     task_id = _init_task("正在获取网管列表...")
-    asyncio.ensure_future(_run_query_alarms(task_id, start_date, end_date, spec_id, ems_ids))
+    print(f"[alarm_query] Starting background thread for task {task_id}", flush=True)
+
+    def _run_in_thread():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_run_query_alarms(task_id, start_date, end_date, spec_id, ems_ids))
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_run_in_thread, daemon=True)
+    t.start()
     return AlarmQueryResponse(task_id=task_id, loaded=0)
 
 
