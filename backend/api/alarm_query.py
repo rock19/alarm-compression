@@ -52,11 +52,14 @@ async def _run_query_alarms(
         # Stage 1: Fetch EMS list (0-5%)
         if not ems_ids:
             _update_progress(task_id, 0, "正在获取网管列表...")
-            ems_list = await fetch_ems_list()
+            ems_list, ems_error = await fetch_ems_list()
+            if ems_error:
+                _update_progress(task_id, 0, "failed", error=ems_error)
+                return
             if ems_list:
                 ems_ids = ",".join(e["id"] for e in ems_list)
             if not ems_ids:
-                _update_progress(task_id, 0, "failed", error="未能获取网管列表")
+                _update_progress(task_id, 0, "failed", error="EMS列表为空，请检查接口配置")
                 return
 
         # Create shared httpx client with connection pooling (avoids TLS handshake per request)
@@ -301,7 +304,8 @@ async def get_specs():
 
 @router.get("/alarm-ems-list")
 async def get_ems_list():
-    return {"ems_list": await fetch_ems_list()}
+    ems_list, error = await fetch_ems_list()
+    return {"ems_list": ems_list, "error": error}
 
 
 @router.post("/import-current-alarms")
@@ -311,11 +315,13 @@ async def import_current_alarms(
 ):
     """Import current/realtime alarms via API."""
     if not ems_ids:
-        ems_list = await fetch_ems_list()
+        ems_list, ems_error = await fetch_ems_list()
+        if ems_error:
+            return {"loaded": 0, "error": ems_error}
         if ems_list:
             ems_ids = ",".join(e["id"] for e in ems_list)
         if not ems_ids:
-            return {"loaded": 0, "error": "未能获取网管列表"}
+            return {"loaded": 0, "error": "EMS列表为空"}
 
     all_rows = []
     for eid in ems_ids.split(","):

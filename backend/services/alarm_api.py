@@ -58,11 +58,11 @@ async def fetch_spec_list() -> list[dict]:
     ]
 
 
-async def fetch_ems_list() -> list[dict]:
-    """Fetch EMS (network manager) list from NMS."""
+async def fetch_ems_list() -> tuple[list[dict], str]:
+    """Fetch EMS (network manager) list from NMS. Returns (list, error_message)."""
     token = await _get_token()
     if not token:
-        return []
+        return [], "接口未配置Token，请在接口配置页面设置"
     base = _get_base_url()
     try:
         async with httpx.AsyncClient(verify=False, timeout=15.0) as client:
@@ -72,10 +72,19 @@ async def fetch_ems_list() -> list[dict]:
                 headers={"token": token, "Content-Type": "application/json; charset=UTF-8"},
             )
             data = resp.json()
+            if data.get("status") != 1:
+                return [], f"EMS列表查询失败: {data.get('msg', '未知错误')}"
             rows = data.get("data", {}).get("rowData", [])
-            return [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
-    except Exception:
-        return []
+            result = [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
+            if not result:
+                return [], "EMS列表为空"
+            return result, ""
+    except httpx.TimeoutException:
+        return [], f"连接NMS服务器超时 ({base})"
+    except httpx.ConnectError:
+        return [], f"无法连接NMS服务器 ({base})，请检查网络和接口配置"
+    except Exception as e:
+        return [], f"获取网管列表失败: {type(e).__name__}: {str(e)[:100]}"
 
 
 async def query_alarm_history(
