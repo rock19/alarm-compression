@@ -93,8 +93,8 @@ async def _run_query_alarms(
                 skipped = len(other)
                 _update_progress(task_id, 2, f"匹配到{len(eids)}个{spec_name}网管" + (f"（跳过{skipped}个）" if skipped else ""))
                 if not eids:
-                    _update_progress(task_id, 0, "failed", error=f"未找到{spec_name}专业的网管（共{len(ems_list)}个网管）")
-                    return
+                    eids = [e["id"] for e in ems_list]
+                    _update_progress(task_id, 2, f"未找到{spec_name}网管，回退查询全部{len(eids)}个网管")
             else:
                 eids = eids_raw
         else:
@@ -117,48 +117,54 @@ async def _run_query_alarms(
                 f"获取页数: {ei+1}/{len(eids)} (已{len(all_rows)}条)",
                 loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
-        # Second pass: concurrent page fetching within thread's event loop
+        # Second pass: per-EMS concurrent page fetching
         CONCURRENCY = 5
-        sem = asyncio.Semaphore(CONCURRENCY)
 
-        async def fetch_page(eid: str, page: int):
-            nonlocal pages_done
-            rows = []
-            for attempt in range(MAX_RETRIES):
-                async with sem:
-                    try:
-                        result = await query_alarm_history(
-                            sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client
-                        )
-                        rows = result.get("rows", [])
-                        error = result.get("error", "")
-                    except Exception as e:
-                        error = str(e)
-                if rows or not error:
-                    break
-                if attempt < MAX_RETRIES - 1:
-                    await asyncio.sleep(1)
+        for ei, (eid, ems_pages, _first_rows) in enumerate(ems_info):
+            if ems_pages <= 1:
+                continue
 
-            if rows:
-                all_rows.extend(rows)
+            sem = asyncio.Semaphore(CONCURRENCY)
 
-            pages_done += 1
-            if pages_done % 20 == 0 or pages_done >= grand_total_pages:
-                pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
-                _update_progress(task_id, min(90, pct),
-                    f"{pages_done}/{grand_total_pages}页 [+{len(all_rows)}条]",
-                    loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
-            return rows
+            async def fetch_page(page: int, eid=eid):
+                nonlocal pages_done
+                rows = []
+                for attempt in range(MAX_RETRIES):
+                    async with sem:
+                        try:
+                            result = await query_alarm_history(
+                                sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client
+                            )
+                            rows = result.get("rows", [])
+                            error = result.get("error", "")
+                        except Exception as e:
+                            error = str(e)
+                    if rows or not error:
+                        break
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(1)
 
-        # Collect all pages from all EMSs into one task pool
-        all_tasks = []
-        for eid, ems_pages, _first_rows in ems_info:
-            for page in range(2, ems_pages + 1):
-                all_tasks.append(fetch_page(eid, page))
+                if rows:
+                    all_rows.extend(rows)
+                pages_done += 1
+                if pages_done % 10 == 0 or pages_done >= grand_total_pages:
+                    pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
+                    _update_progress(task_id, min(90, pct),
+                        f"EMS{ei+1}/{len(eids)} {pages_done}/{grand_total_pages}页 [+{len(all_rows)}条]",
+                        loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
+                return rows
 
-        if all_tasks:
-            _update_progress(task_id, 5, f"{grand_total_pages}页 {CONCURRENCY}并发拉取...", total_pages=grand_total_pages)
-            await asyncio.gather(*all_tasks)
+            tasks = [fetch_page(p) for p in range(2, ems_pages + 1)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            errors = [r for r in results if isinstance(r, Exception)]
+            if errors:
+                print(f"[alarm_query] EMS {eid}: {len(errors)}/{len(tasks)} failed", flush=True)
+                for e in errors[:3]:
+                    print(f"  {e}", flush=True)
+
+            _update_progress(task_id, min(90, 5 + round(pages_done / max(grand_total_pages, 1) * 85)),
+                f"网管{ei+1}/{len(eids)} {pages_done}/{grand_total_pages}页 ({len(all_rows)}条)",
+                loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
         expected = total
         shortfall = expected - len(all_rows)
