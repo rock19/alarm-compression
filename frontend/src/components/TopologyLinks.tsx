@@ -62,6 +62,11 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
   }
   fullNes.forEach(n => { if (!added.has(n)) neOrder.push(n); });
 
+  // Adapt layout to node count to avoid overlap
+  const nodeCount = fullNes.length;
+  const isLarge = nodeCount > 30;
+  const chartHeight = Math.max(400, nodeCount * (isLarge ? 18 : 24));
+
   return (
     <Collapse size="small" ghost style={{ marginTop: 4 }}
       items={[{
@@ -94,7 +99,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                 return {
                   name: ne,
                   children: children.length > 0 ? children : undefined,
-                  itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: 2 },
+                  itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: isLarge ? 1 : 2 },
                   alarmDetails: info?.alarmDetails || [],
                   hasAlarm, _info: info,
                 };
@@ -107,7 +112,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                   const hasAlarm = alarmedNes.has(n);
                   extraRoots.push({
                     name: n,
-                    itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: 2 },
+                    itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: isLarge ? 1 : 2 },
                     alarmDetails: info?.alarmDetails || [],
                     hasAlarm, _info: info,
                   });
@@ -135,25 +140,25 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                 series: [{
                   type: 'tree',
                   data: treeData ? [treeData, ...extraRoots] : extraRoots,
-                  top: '2%', left: '3%', bottom: '2%', right: '8%',
+                  top: 10, left: 10, bottom: 10, right: 40,
                   symbol: 'circle',
-                  symbolSize: 12,
+                  symbolSize: isLarge ? 8 : 12,
                   roam: true,
                   expandAndCollapse: true,
                   initialTreeDepth: -1,
                   orient: 'LR',
                   layout: 'orthogonal',
                   edgeShape: 'curve',
-                  nodeWidth: 20,
-                  nodeHeight: 20,
                   label: {
                     position: 'bottom', verticalAlign: 'top', align: 'center',
-                    fontSize: 10, distance: 6,
+                    fontSize: isLarge ? 8 : 10, distance: isLarge ? 3 : 6,
                     formatter: (p: any) => {
-                      const n = p.name.length > 18 ? p.name.slice(0,18)+'...' : p.name;
+                      const maxLen = isLarge ? 12 : 18;
+                      const n = p.name.length > maxLen ? p.name.slice(0,maxLen)+'...' : p.name;
                       const d = p.data; const cnt = d.alarmDetails?.length || 0;
                       const label = cnt > 0 ? `${n}(${cnt})` : n;
-                      if (!d.hasAlarm) return `{ne|${label}}\n{ok|✓无告警}`;
+                      if (!d.hasAlarm) return isLarge ? `{ne|${label}}` : `{ne|${label}}\n{ok|✓无告警}`;
+                      if (isLarge) return `{ne|${label}}`;
                       let r = `{ne|${label}}`;
                       (d.alarmDetails || []).slice(0, 3).forEach((a: any) => {
                         const obj = a.alarm_object ? `${a.alarm_object} - ` : '';
@@ -182,7 +187,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                   emphasis: { focus: 'descendant', lineStyle: { color: '#333', width: 2.5 } },
                 }],
               };
-            })()} style={{ height: Math.max(380, fullNes.length * 14) }} />
+            })()} style={{ height: chartHeight }} />
             <Collapse size="small" ghost
               items={[{
                 key: 'link-table',
