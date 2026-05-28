@@ -142,9 +142,9 @@ async def _run_query_alarms(
                 pages_done += 1
                 pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
                 _update_progress(task_id, min(90, pct),
-                    f"网管{ei+1}/{len(eids)} 第{page}/{ems_pages}页"
-                    + (f" [{len(rows)}条]" if rows else " [空]")
-                    + f" (共{len(all_rows)}条, {pages_done}/{grand_total_pages}页)",
+                    f"网管{ei+1}/{len(eids)} {pages_done}/{grand_total_pages}页"
+                    + (f" [+{len(rows)}条]" if rows else "")
+                    + f" (共{len(all_rows)}条)",
                     loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
         expected = total
