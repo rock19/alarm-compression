@@ -1,8 +1,8 @@
 """
-External NMS alarm history API client.
+External NMS alarm history API client — synchronous HTTP.
 Reads config from api_config.json (managed via /api/api-config).
 """
-import asyncio
+import time
 import httpx
 from typing import Optional
 
@@ -10,10 +10,9 @@ _cached_token: Optional[str] = None
 _cached_token_ts: float = 0
 
 
-async def _get_token() -> str:
+def _get_token() -> str:
     """Get auth token from config (cached for 30 min)."""
     global _cached_token, _cached_token_ts
-    import time
     now = time.time()
     if _cached_token and (now - _cached_token_ts) < 1800:
         return _cached_token
@@ -32,16 +31,16 @@ def _get_base_url() -> str:
     return f"{cfg.base_url}:{cfg.port}"
 
 
-async def fetch_spec_list() -> list[dict]:
+def fetch_spec_list() -> list[dict]:
     """Fetch profession/spec list from NMS."""
     from api.config_api import get_config
     cfg = get_config()
-    token = await _get_token()
+    token = _get_token()
     if not token:
         return []
     try:
-        async with httpx.AsyncClient(verify=False, timeout=120.0) as client:
-            resp = await client.post(
+        with httpx.Client(verify=False, timeout=120.0) as client:
+            resp = client.post(
                 f"https://{cfg.base_url.split('://')[-1] if '://' in cfg.base_url else '172.17.3.166'}:8000/DESApp/C/basic/spec/getSpecList",
                 headers={"token": token, "Content-Type": "application/json"},
             )
@@ -59,21 +58,21 @@ async def fetch_spec_list() -> list[dict]:
     ]
 
 
-async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> tuple[list[dict], str]:
+def fetch_ems_list(shared_client: Optional[httpx.Client] = None) -> tuple[list[dict], str]:
     """Fetch EMS (network manager) list from NMS. Returns (list, error_message)."""
-    token = await _get_token()
+    token = _get_token()
     if not token:
         return [], "接口未配置Token，请在接口配置页面设置"
     base = _get_base_url()
     url = f"{base}/base/resource/platformEmsTmpl"
-    # Don't pass specId — the API is sensitive to this parameter (timeouts/empty results)
+    # Don't pass specId — the API is sensitive to that parameter
     payload = {"current": 1, "pageSize": 200, "params": {"emsName": None}}
     headers = {"token": token, "Content-Type": "application/json; charset=UTF-8"}
 
-    async def _do_fetch(client: httpx.AsyncClient):
-        t0 = __import__('time').time()
-        resp = await client.post(url, json=payload, headers=headers)
-        elapsed = __import__('time').time() - t0
+    def _do_fetch(client: httpx.Client):
+        t0 = time.time()
+        resp = client.post(url, json=payload, headers=headers)
+        elapsed = time.time() - t0
         print(f"[alarm_api] fetch_ems_list HTTP {resp.status_code} in {elapsed:.1f}s")
         data = resp.json()
         if data.get("status") != 1:
@@ -88,29 +87,28 @@ async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> t
     for attempt in range(3):
         try:
             if shared_client:
-                return await _do_fetch(shared_client)
-            async with httpx.AsyncClient(verify=False, timeout=60.0) as client:
-                return await _do_fetch(client)
+                return _do_fetch(shared_client)
+            with httpx.Client(verify=False, timeout=120.0) as client:
+                return _do_fetch(client)
         except Exception as e:
             last_error = f"连接NMS失败({type(e).__name__}, {attempt+1}/3): {str(e)[:120]}"
             print(f"[alarm_api] {last_error}")
             if attempt < 2:
-                await asyncio.sleep(2)
-
+                time.sleep(2)
     return [], last_error
 
 
-async def query_alarm_history(
+def query_alarm_history(
     start_date: str,
     end_date: str,
     spec_id: str,
     ems_id: str,
     page: int = 1,
     limit: int = 100,
-    client: Optional[httpx.AsyncClient] = None,
+    client: Optional[httpx.Client] = None,
 ) -> dict:
     """Query historical alarms from NMS API (single page). Accepts optional shared client."""
-    token = await _get_token()
+    token = _get_token()
     if not token:
         return {"rows": [], "total": 0, "error": "未配置Token"}
 
@@ -122,11 +120,11 @@ async def query_alarm_history(
         "page": str(page), "limit": str(limit),
     }
 
-    async def _do_query(cl: httpx.AsyncClient):
+    def _do_query(cl: httpx.Client):
         url = f"{base}/alarmManage/QueryAlarmRecord"
-        if page == 1:  # Log first page of each EMS
+        if page == 1:
             print(f"[alarm_api] Query: {url}?specId={spec_id}&emsId={ems_id[:16]}...&sDate={start_date}&eDate={end_date}&page={page}&limit={limit}", flush=True)
-        resp = await cl.get(url, params=params, headers={"token": token})
+        resp = cl.get(url, params=params, headers={"token": token})
         data = resp.json()
         if page == 1:
             inner = data.get("data", {}) if isinstance(data, dict) else {}
@@ -138,23 +136,23 @@ async def query_alarm_history(
 
     try:
         if client:
-            return await _do_query(client)
+            return _do_query(client)
         else:
-            async with httpx.AsyncClient(verify=False, timeout=60.0) as own_client:
-                return await _do_query(own_client)
+            with httpx.Client(verify=False, timeout=120.0) as own_client:
+                return _do_query(own_client)
     except Exception as e:
         return {"rows": [], "total": 0, "error": str(e)}
 
 
-async def fetch_all_alarms(
+def fetch_all_alarms(
     start_date: str, end_date: str,
     spec_id: str, ems_id: str,
     progress_callback=None,
 ) -> tuple[list[dict], int]:
     """Fetch ALL alarm records across all pages, with optional progress callback."""
-    all_rows, page, total = [], 1, 0
+    all_rows, page_num, total = [], 1, 0
     while True:
-        result = await query_alarm_history(start_date, end_date, spec_id, ems_id, page, 100)
+        result = query_alarm_history(start_date, end_date, spec_id, ems_id, page_num, 100)
         if result.get("error"):
             break
         rows = result.get("rows", [])
@@ -164,11 +162,11 @@ async def fetch_all_alarms(
         total = result.get("total", 0)
         total_pages = (total + 99) // 100 if total else 0
         if progress_callback:
-            progress_callback(page, total_pages, len(all_rows), total)
-        print(f"[alarm_api] page {page}/{total_pages}: {len(rows)} rows, {len(all_rows)}/{total} loaded")
+            progress_callback(page_num, total_pages, len(all_rows), total)
+        print(f"[alarm_api] page {page_num}/{total_pages}: {len(rows)} rows, {len(all_rows)}/{total} loaded")
         if len(all_rows) >= total:
             break
-        page += 1
+        page_num += 1
     return all_rows, total
 
 
@@ -215,15 +213,15 @@ def convert_alarm_record(raw: dict) -> dict:
     }
 
 
-async def query_current_alarms(ems_id: str) -> list[dict]:
+def query_current_alarms(ems_id: str) -> list[dict]:
     """Query realtime/current alarms from NMS API."""
-    token = await _get_token()
+    token = _get_token()
     if not token:
         return []
     base = _get_base_url()
     try:
-        async with httpx.AsyncClient(verify=False, timeout=120.0) as client:
-            resp = await client.get(
+        with httpx.Client(verify=False, timeout=120.0) as client:
+            resp = client.get(
                 f"{base}/alarmManage/QueryCurrentAlarmRec",
                 params={"emsId": ems_id},
                 headers={"token": token},

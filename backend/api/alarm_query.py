@@ -39,27 +39,25 @@ class AlarmQueryResponse(BaseModel):
     task_id: str = ""
 
 
-async def _run_query_alarms(
+def _run_query_alarms(
     task_id: str,
     start_date: str, end_date: str,
     spec_id: str, ems_ids: str,
 ):
-    """Background task: query alarms from all EMS and store results."""
+    """Background task: query alarms from all EMS and store results (synchronous)."""
+    import time as time_mod
+    import httpx
     sdt = f"{start_date} 00:00:00"
     edt = f"{end_date} 23:59:59"
 
     try:
         _update_progress(task_id, 0, "任务启动...")
-        import httpx
-        shared_client = httpx.AsyncClient(
-            verify=False, timeout=120.0,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        )
+        shared_client = httpx.Client(verify=False, timeout=120.0)
         ems_list = None
         # Stage 1: Fetch EMS list (0-5%)
         if not ems_ids:
             _update_progress(task_id, 0, "正在获取网管列表...")
-            ems_list, ems_error = await fetch_ems_list(shared_client)
+            ems_list, ems_error = fetch_ems_list(shared_client)
             if ems_error:
                 _update_progress(task_id, 0, "failed", error=ems_error)
                 return
@@ -72,7 +70,7 @@ async def _run_query_alarms(
         # Stage 2: Sequential per-EMS page fetching (2-90%)
         from api.config_api import get_config
         cfg = get_config()
-        PAGE_SIZE = max(10, min(100, cfg.page_size or 100))  # Clamp 10-100
+        PAGE_SIZE = max(10, min(100, cfg.page_size or 100))
         all_rows = []
         total = 0
         grand_total_pages = 0
@@ -80,9 +78,9 @@ async def _run_query_alarms(
         eids_raw = [e.strip() for e in ems_ids.split(",") if e.strip()]
         MAX_RETRIES = 3
 
-        # Filter EMSs: match spec_id to speciality name via NMS API
+        # Filter EMSs by profession
         if ems_list:
-            spec_list = await fetch_spec_list()
+            spec_list = fetch_spec_list()
             spec_name = ""
             for s in spec_list:
                 if str(s.get("id", "")) == spec_id:
@@ -90,9 +88,8 @@ async def _run_query_alarms(
                     break
             if spec_name:
                 matched = [e for e in ems_list if spec_name in e.get("speciality", "")]
-                other = [e for e in ems_list if e not in matched]
                 eids = [e["id"] for e in matched]
-                skipped = len(other)
+                skipped = len(ems_list) - len(eids)
                 _update_progress(task_id, 2, f"匹配到{len(eids)}个{spec_name}网管" + (f"（跳过{skipped}个）" if skipped else ""))
                 if not eids:
                     all_names = [e.get("name","") + "(" + e.get("speciality","") + ")" for e in ems_list]
@@ -107,7 +104,7 @@ async def _run_query_alarms(
         # First pass: get page 1 of each EMS to know total pages
         ems_info = []
         for ei, eid in enumerate(eids):
-            result = await query_alarm_history(sdt, edt, spec_id, eid, 1, PAGE_SIZE, client=shared_client)
+            result = query_alarm_history(sdt, edt, spec_id, eid, 1, PAGE_SIZE, client=shared_client)
             rows = result.get("rows", [])
             ems_total = result.get("total", 0)
             ems_pages = (ems_total + PAGE_SIZE - 1) // PAGE_SIZE if ems_total else 0
@@ -121,8 +118,7 @@ async def _run_query_alarms(
                 f"获取页数: {ei+1}/{len(eids)} (已{len(all_rows)}条)",
                 loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
-        # Second pass: sequential page-by-page fetching (no concurrency)
-        # Stop fetching an EMS after 5 consecutive empty pages (API total may be inflated)
+        # Second pass: sequential page-by-page (no concurrency)
         MAX_EMPTY = 5
         for ei, (eid, ems_pages, _first_rows) in enumerate(ems_info):
             ems_loaded = len(_first_rows)
@@ -131,9 +127,7 @@ async def _run_query_alarms(
                 rows = []
                 for attempt in range(MAX_RETRIES):
                     try:
-                        result = await query_alarm_history(
-                            sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client
-                        )
+                        result = query_alarm_history(sdt, edt, spec_id, eid, page, PAGE_SIZE, client=shared_client)
                         rows = result.get("rows", [])
                         error = result.get("error", "")
                     except Exception as e:
@@ -141,7 +135,7 @@ async def _run_query_alarms(
                     if rows or not error:
                         break
                     if attempt < MAX_RETRIES - 1:
-                        await asyncio.sleep(1)
+                        time_mod.sleep(1)
 
                 if rows:
                     all_rows.extend(rows)
@@ -151,8 +145,8 @@ async def _run_query_alarms(
                     empty_streak += 1
                     if empty_streak >= MAX_EMPTY:
                         skipped = ems_pages - page
-                        pages_done += skipped  # Mark remaining pages as done
-                        grand_total_pages -= skipped  # Adjust total downward
+                        pages_done += skipped
+                        grand_total_pages -= skipped
                         _update_progress(task_id, min(90, 5 + round(pages_done / max(grand_total_pages, 1) * 85)),
                             f"网管{ei+1}/{len(eids)} {pages_done}/{grand_total_pages}页 [{ems_loaded}条, 跳过{skipped}空页]",
                             loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
@@ -172,9 +166,8 @@ async def _run_query_alarms(
         print(f"[alarm_query] Done: {len(all_rows)} rows, {pages_done}/{grand_total_pages} pages, api_total={expected}")
         _update_progress(task_id, 90, status)
 
-        # Stage 3: Convert data (90-97%)
+        # Stage 3: Convert data
         _update_progress(task_id, 90, "正在转换数据...")
-
         records = []
         raw_count = len(all_rows)
         for i, raw in enumerate(all_rows):
@@ -189,11 +182,11 @@ async def _run_query_alarms(
         _update_progress(task_id, 97, f"转换完成: {len(records)}/{raw_count} 条有效")
 
         if not records:
-            print(f"[alarm_query] WARNING: 0 valid records! all_rows has {raw_count} raw items. Sample: {all_rows[0] if all_rows else 'EMPTY'}")
+            print(f"[alarm_query] WARNING: 0 valid records! all_rows has {raw_count} raw items")
             _update_progress(task_id, 100, "done", loaded=0, total=total)
             return
 
-        # Stage 4: Store and finalize (97-100%)
+        # Stage 4: Store
         _update_progress(task_id, 98, "正在保存数据...")
         meta = {
             "total_records": len(records),
@@ -206,7 +199,6 @@ async def _run_query_alarms(
             "severity_levels": list(set(r["告警级别"] for r in records if r.get("告警级别"))),
         }
         store.set_alarms(records, meta)
-
         _update_progress(task_id, 100, "done", loaded=len(records), total=total,
             meta={"unique_ne": meta["unique_ne"], "unique_alarm_names": meta["unique_alarm_names"],
                   "time_min": meta["time_min"].isoformat() if meta["time_min"] else None,
@@ -218,7 +210,7 @@ async def _run_query_alarms(
         _update_progress(task_id, 0, "failed", error=str(e), loaded=0)
         traceback.print_exc()
     finally:
-        await shared_client.aclose()
+        shared_client.close()
 
 
 @router.post("/query-alarms", response_model=AlarmQueryResponse)
@@ -232,16 +224,7 @@ async def query_alarms(
     import threading
     task_id = _init_task("正在获取网管列表...")
     print(f"[alarm_query] Starting background thread for task {task_id}", flush=True)
-
-    def _run_in_thread():
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(_run_query_alarms(task_id, start_date, end_date, spec_id, ems_ids))
-        finally:
-            loop.close()
-
-    t = threading.Thread(target=_run_in_thread, daemon=True)
+    t = threading.Thread(target=_run_query_alarms, args=(task_id, start_date, end_date, spec_id, ems_ids), daemon=True)
     t.start()
     return AlarmQueryResponse(task_id=task_id, loaded=0)
 
@@ -253,12 +236,12 @@ async def get_progress(task_id: str):
 
 @router.get("/alarm-specs")
 async def get_specs():
-    return {"specs": await fetch_spec_list()}
+    return {"specs": fetch_spec_list()}
 
 
 @router.get("/alarm-ems-list")
 async def get_ems_list():
-    ems_list, error = await fetch_ems_list()
+    ems_list, error = fetch_ems_list()
     return {"ems_list": ems_list, "error": error}
 
 
@@ -269,7 +252,7 @@ async def import_current_alarms(
 ):
     """Import current/realtime alarms via API."""
     if not ems_ids:
-        ems_list, ems_error = await fetch_ems_list()
+        ems_list, ems_error = fetch_ems_list()
         if ems_error:
             return {"loaded": 0, "error": ems_error}
         if ems_list:
@@ -281,7 +264,7 @@ async def import_current_alarms(
     for eid in ems_ids.split(","):
         eid = eid.strip()
         if not eid: continue
-        rows = await query_current_alarms(eid)
+        rows = query_current_alarms(eid)
         all_rows.extend(rows)
 
     # Filter by spec if specified
