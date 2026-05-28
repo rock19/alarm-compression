@@ -93,8 +93,10 @@ async def _run_query_alarms(
                 skipped = len(other)
                 _update_progress(task_id, 2, f"匹配到{len(eids)}个{spec_name}网管" + (f"（跳过{skipped}个）" if skipped else ""))
                 if not eids:
-                    eids = [e["id"] for e in ems_list]
-                    _update_progress(task_id, 2, f"未找到{spec_name}网管，回退查询全部{len(eids)}个网管")
+                    all_names = [e.get("name","") + "(" + e.get("speciality","") + ")" for e in ems_list]
+                    _update_progress(task_id, 0, "failed",
+                        error=f"未找到{spec_name}专业的网管。当前共{len(ems_list)}个网管: {'; '.join(all_names[:5])}...")
+                    return
             else:
                 eids = eids_raw
         else:
