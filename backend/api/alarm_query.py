@@ -70,7 +70,9 @@ async def _run_query_alarms(
                 return
 
         # Stage 2: Sequential per-EMS page fetching (2-90%)
-        PAGE_SIZE = 100
+        from api.config_api import get_config
+        cfg = get_config()
+        PAGE_SIZE = max(10, min(100, cfg.page_size or 100))  # Clamp 10-100
         all_rows = []
         total = 0
         grand_total_pages = 0

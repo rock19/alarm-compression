@@ -15,6 +15,7 @@ class APIConfig(BaseModel):
     base_url: str = ""
     port: str = ""
     token: str = ""
+    page_size: int = 100
 
 
 def _load_config() -> APIConfig:

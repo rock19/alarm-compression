@@ -8,6 +8,7 @@ interface ConfigData {
   base_url: string;
   port: string;
   token: string;
+  page_size: number;
 }
 
 export default function APIConfig() {
@@ -67,7 +68,7 @@ export default function APIConfig() {
       <Card title={<><SettingOutlined /> 数据接口配置</>} style={{ marginBottom: 16 }}>
         <Form form={form} layout="vertical" onFinish={handleSave}
           initialValues={{ username: 'test', password: 'Enovell@123',
-            base_url: 'http://172.17.3.165', port: '10000', token: '' }}>
+            base_url: 'http://172.17.3.165', port: '10000', token: '', page_size: 100 }}>
           <Divider plain>登录信息</Divider>
           <Form.Item label="用户名" name="username" rules={[{ required: true }]}>
             <Input placeholder="登录用户名" />
@@ -85,6 +86,10 @@ export default function APIConfig() {
           </Form.Item>
           <Form.Item label="端口" name="port" rules={[{ required: true }]}>
             <Input placeholder="10000" />
+          </Form.Item>
+          <Divider plain>查询参数</Divider>
+          <Form.Item label="每页最大行数（10-100）" name="page_size" rules={[{ required: true }]}>
+            <Input type="number" min={10} max={100} placeholder="100" />
           </Form.Item>
           <Space>
             <Button type="primary" icon={<SaveOutlined />} loading={saving} htmlType="submit" size="large">
