@@ -123,6 +123,7 @@ async def _run_query_alarms(
 
         # Second pass: sequential page-by-page fetching (no concurrency)
         for ei, (eid, ems_pages, _first_rows) in enumerate(ems_info):
+            ems_loaded = len(_first_rows)  # rows from page 1
             for page in range(2, ems_pages + 1):
                 rows = []
                 for attempt in range(MAX_RETRIES):
@@ -141,10 +142,11 @@ async def _run_query_alarms(
 
                 if rows:
                     all_rows.extend(rows)
+                    ems_loaded += len(rows)
                 pages_done += 1
                 pct = 5 + round(pages_done / max(grand_total_pages, 1) * 85)
                 _update_progress(task_id, min(90, pct),
-                    f"网管{ei+1}/{len(eids)} {pages_done}/{grand_total_pages}页 [+{len(all_rows)}条]",
+                    f"网管{ei+1}/{len(eids)} 第{page}/{ems_pages}页 本网管+{ems_loaded}条",
                     loaded=len(all_rows), page=pages_done, total_pages=grand_total_pages)
 
         expected = total
