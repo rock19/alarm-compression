@@ -39,7 +39,7 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
 
   useEffect(() => {
     if (nes.length === 0) return;
-    api.getNENeighbors(nes.slice(0, 20)).then((r: any) => {
+    api.getNENeighbors(nes.slice(0, 200)).then((r: any) => {
       if (r.links?.length > 0) {
         setLinks(r.links);
         const allNes = new Set(nes);
@@ -116,7 +116,7 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
               const rootNe = neOrder.find(n => alarmedNes.has(n)) || neOrder[0];
               const visited = new Set<string>();
               const buildTree = (ne: string, depth: number): any => {
-                if (visited.has(ne) || depth > 3) return null;
+                if (visited.has(ne) || depth > 8) return null;
                 visited.add(ne);
                 const info = neInfo[ne];
                 const hasAlarm = alarmedNes.has(ne);

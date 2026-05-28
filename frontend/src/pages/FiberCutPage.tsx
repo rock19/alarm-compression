@@ -235,16 +235,21 @@ export default function FiberCutPage() {
 
 function FiberTopo({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
   const [links, setLinks] = useState<any[] | null>(null);
+  const [loading, setLoading] = useState(false);
   useEffect(() => {
     if (nes.length < 1) return;
+    setLoading(true);
     api.getNENeighbors(nes.slice(0, 20)).then((r: any) => {
       if (r.links?.length > 0) setLinks(r.links);
-    }).catch(() => {});
+      else setLinks([]);
+    }).catch(() => setLinks([])).finally(() => setLoading(false));
   }, [nes.join(',')]);
-  if (!links?.length) return null;
+
+  if (loading) return <div style={{fontSize:12,color:'#999',marginTop:4}}>加载拓扑中...</div>;
+  if (links === null) return null;
   const neSet = new Set(nes);
   const filtered = links.filter((l: any) => neSet.has(l.source) || neSet.has(l.target));
-  if (!filtered.length) return null;
+  if (!filtered.length) return <div style={{fontSize:12,color:'#fa8c16',marginTop:4}}>无物理拓扑数据（需先运行FP-Growth构建拓扑）</div>;
   return <Collapse size="small" ghost items={[{ key: 'topo', label: `物理拓扑 (${filtered.length}条链路)`,
     children: <Table size="small" pagination={false} dataSource={filtered.map((l: any, i: number) => ({ ...l, key: i }))}
       columns={[{ title: 'A端', dataIndex: 'source', width: 140, ellipsis: true },
