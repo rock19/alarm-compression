@@ -3,6 +3,7 @@ import { Card, Row, Col, Statistic, Button, Upload, Tag, Progress, DatePicker, S
 import { ExperimentOutlined, SearchOutlined, AlertOutlined, CheckCircleOutlined, CloseCircleOutlined, RobotOutlined } from '@ant-design/icons';
 import { api } from '../api/client';
 import { useTaskProgress } from '../hooks/useTaskProgress';
+import TopologyLinks from '../components/TopologyLinks';
 
 export default function FiberCutPage() {
   const [loading, setLoading] = useState(false);
@@ -194,7 +195,7 @@ export default function FiberCutPage() {
               <p style={{ fontSize: 13, color: '#cf1322', fontWeight: 600 }}>
                 断点: {ev.cut_segment} | 受影响: {ev.affected_nes?.join(' → ')}
               </p>
-              <FiberTopo nes={evNes} alarms={evAlarms} />
+              <TopologyLinks nes={evNes} alarms={evAlarms} />
               <Collapse size="small" ghost items={[{ key: 'detail', label: `告警明细 (${evAlarms.length} 条)`,
                 children: (
                   <Table size="small" bordered pagination={false}
@@ -231,30 +232,6 @@ export default function FiberCutPage() {
       )}
     </div>
   );
-}
-
-function FiberTopo({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
-  const [links, setLinks] = useState<any[] | null>(null);
-  const [loading, setLoading] = useState(false);
-  useEffect(() => {
-    if (nes.length < 1) return;
-    setLoading(true);
-    api.getNENeighbors(nes.slice(0, 200)).then((r: any) => {
-      if (r.links?.length > 0) setLinks(r.links);
-      else setLinks([]);
-    }).catch(() => setLinks([])).finally(() => setLoading(false));
-  }, [nes.join(',')]);
-
-  if (loading) return <div style={{fontSize:12,color:'#999',marginTop:4}}>加载拓扑中...</div>;
-  if (links === null) return null;
-  const neSet = new Set(nes);
-  const filtered = links.filter((l: any) => neSet.has(l.source) || neSet.has(l.target));
-  if (!filtered.length) return <div style={{fontSize:12,color:'#fa8c16',marginTop:4}}>无物理拓扑数据（需先运行FP-Growth构建拓扑）</div>;
-  return <Collapse size="small" ghost items={[{ key: 'topo', label: `物理拓扑 (${filtered.length}条链路)`,
-    children: <Table size="small" pagination={false} dataSource={filtered.map((l: any, i: number) => ({ ...l, key: i }))}
-      columns={[{ title: 'A端', dataIndex: 'source', width: 140, ellipsis: true },
-        { title: 'Z端', dataIndex: 'target', width: 140, ellipsis: true }]} />
-  }]} />;
 }
 
 function FiberGuidance({ ev }: { ev: any }) {
