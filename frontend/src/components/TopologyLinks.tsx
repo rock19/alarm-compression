@@ -68,38 +68,12 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
   const isLarge = nodeCount > 30;
   const chartHeight = Math.max(400, nodeCount * (isLarge ? 18 : 24));
 
-  // Compute filtered view for label counts
-  let displayLinks = filteredLinks.length;
-  let displayNes = fullNes.length;
-  let displayFilteredLinks = filteredLinks;
-  if (hideHealthy) {
-    const hasAlarmSubtree = (ne: string, seen: Set<string>): boolean => {
-      if (seen.has(ne)) return false;
-      seen.add(ne);
-      if (alarmedNes.has(ne)) return true;
-      return (adj[ne] || []).some(p => hasAlarmSubtree(p, seen));
-    };
-    const visibleSet = new Set<string>();
-    const checkNe = (ne: string, seen: Set<string>) => {
-      if (seen.has(ne)) return;
-      seen.add(ne);
-      if (alarmedNes.has(ne) || hasAlarmSubtree(ne, new Set([...seen]))) {
-        visibleSet.add(ne);
-        (adj[ne] || []).forEach(p => checkNe(p, seen));
-      }
-    };
-    neOrder.forEach(n => checkNe(n, new Set()));
-    displayNes = visibleSet.size;
-    displayFilteredLinks = filteredLinks.filter(l => visibleSet.has(l.source) && visibleSet.has(l.target));
-    displayLinks = displayFilteredLinks.length;
-  }
-
   return (
     <Collapse size="small" ghost style={{ marginTop: 4 }}
       items={[{
         key: 'topo',
         label: <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          网元物理拓扑 ({displayLinks} 条链路, {displayNes} 个网元{hideHealthy ? ', 已隐藏无告警' : ''})
+          网元物理拓扑 ({hideHealthy ? visibleLinks.size : filteredLinks.length} 条链路, {hideHealthy ? visibleNes.size : fullNes.length} 个网元{hideHealthy ? ' (已隐藏无告警)' : ''})
           <span style={{ marginLeft: 8 }}>
             <Tag color="red" style={{fontSize:10}}>紧急</Tag>
             <Tag color="orange" style={{fontSize:10}}>主要</Tag>
@@ -116,24 +90,32 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
           <>
             <ReactECharts option={(() => {
               // Pre-compute: does subtree have any alarmed node?
+              const subtreeHasAlarm = (ne: string, seen: Set<string>): boolean => {
+                if (seen.has(ne)) return false;
+                seen.add(ne);
+                if (alarmedNes.has(ne)) return true;
+                return (adj[ne] || []).some(peer => subtreeHasAlarm(peer, seen));
+              };
+
               const rootNe = neOrder.find(n => alarmedNes.has(n)) || neOrder[0];
               const visited = new Set<string>();
+              const visibleNes = new Set<string>();
+              const visibleLinks = new Set<string>();
 
               const buildTree = (ne: string, depth: number): any => {
                 if (visited.has(ne)) return null;
-                if (hideHealthy && displayFilteredLinks !== filteredLinks) {
-                  // Use precomputed visible set
-                  const visibleSet = new Set<string>();
-                  displayFilteredLinks.forEach(l => { visibleSet.add(l.source); visibleSet.add(l.target); });
-                  if (!visibleSet.has(ne)) return null;
-                }
+                if (hideHealthy && !alarmedNes.has(ne) && !subtreeHasAlarm(ne, new Set([...visited]))) return null;
                 visited.add(ne);
+                visibleNes.add(ne);
                 const info = neInfo[ne];
                 const hasAlarm = alarmedNes.has(ne);
                 const children: any[] = [];
                 (adj[ne] || []).forEach(peer => {
                   const child = buildTree(peer, depth + 1);
-                  if (child) children.push(child);
+                  if (child) {
+                    children.push(child);
+                    visibleLinks.add(`${ne}↔${peer}`);
+                  }
                 });
                 return {
                   name: ne,
@@ -149,6 +131,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                 if (!visited.has(n)) {
                   const info = neInfo[n];
                   const hasAlarm = alarmedNes.has(n);
+                  visibleNes.add(n);
                   extraRoots.push({
                     name: n,
                     itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: isLarge ? 1 : 2 },
@@ -230,10 +213,10 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
             <Collapse size="small" ghost
               items={[{
                 key: 'link-table',
-                label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>链路端口明细 ({displayLinks} 条)</Typography.Text>,
+                label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>链路端口明细 ({(hideHealthy ? filteredLinks.filter(l => visibleLinks.has(`${l.source}↔${l.target}`) || visibleLinks.has(`${l.target}↔${l.source}`)) : filteredLinks).length} 条)</Typography.Text>,
                 children: (
                   <Table size="small" pagination={false}
-                    dataSource={displayFilteredLinks.map((l: any, i: number) => ({ ...l, key: i }))}
+                    dataSource={(hideHealthy ? filteredLinks.filter(l => visibleLinks.has(`${l.source}↔${l.target}`) || visibleLinks.has(`${l.target}↔${l.source}`)) : filteredLinks).map((l: any, i: number) => ({ ...l, key: i }))}
                     columns={[
                       { title: 'A端', dataIndex: 'source', width: 160, ellipsis: true },
                       { title: 'A端端口', dataIndex: 'source_port', width: 180, ellipsis: true, render: (v: string) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v}</div> },
