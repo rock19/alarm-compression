@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Collapse, Tag, Typography, Table } from 'antd';
+import { Collapse, Tag, Typography, Table, Switch } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import { api } from '../api/client';
 
 export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
   const [links, setLinks] = useState<any[] | null>(null);
   const [fullNes, setFullNes] = useState<string[]>(nes);
+  const [hideHealthy, setHideHealthy] = useState(false);
 
   useEffect(() => {
     if (nes.length === 0) return;
@@ -72,7 +73,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
       items={[{
         key: 'topo',
         label: <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          网元物理拓扑 ({filteredLinks.length} 条链路, {fullNes.length} 个网元)
+          网元物理拓扑 ({hideHealthy ? visibleLinks.size : filteredLinks.length} 条链路, {hideHealthy ? visibleNes.size : fullNes.length} 个网元{hideHealthy ? ' (已隐藏无告警)' : ''})
           <span style={{ marginLeft: 8 }}>
             <Tag color="red" style={{fontSize:10}}>紧急</Tag>
             <Tag color="orange" style={{fontSize:10}}>主要</Tag>
@@ -80,21 +81,41 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
             <Tag color="blue" style={{fontSize:10}}>提示</Tag>
             <Tag color="green" style={{fontSize:10}}>无告警</Tag>
           </span>
+          <span style={{ marginLeft: 12 }}>
+            <Switch size="small" checked={hideHealthy} onChange={setHideHealthy}
+              checkedChildren="隐藏无告警" unCheckedChildren="显示全部" />
+          </span>
         </Typography.Text>,
         children: (
           <>
             <ReactECharts option={(() => {
+              // Pre-compute: does subtree have any alarmed node?
+              const subtreeHasAlarm = (ne: string, seen: Set<string>): boolean => {
+                if (seen.has(ne)) return false;
+                seen.add(ne);
+                if (alarmedNes.has(ne)) return true;
+                return (adj[ne] || []).some(peer => subtreeHasAlarm(peer, seen));
+              };
+
               const rootNe = neOrder.find(n => alarmedNes.has(n)) || neOrder[0];
               const visited = new Set<string>();
+              const visibleNes = new Set<string>();
+              const visibleLinks = new Set<string>();
+
               const buildTree = (ne: string, depth: number): any => {
                 if (visited.has(ne)) return null;
+                if (hideHealthy && !alarmedNes.has(ne) && !subtreeHasAlarm(ne, new Set([...visited]))) return null;
                 visited.add(ne);
+                visibleNes.add(ne);
                 const info = neInfo[ne];
                 const hasAlarm = alarmedNes.has(ne);
                 const children: any[] = [];
                 (adj[ne] || []).forEach(peer => {
                   const child = buildTree(peer, depth + 1);
-                  if (child) children.push(child);
+                  if (child) {
+                    children.push(child);
+                    visibleLinks.add(`${ne}↔${peer}`);
+                  }
                 });
                 return {
                   name: ne,
@@ -110,6 +131,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                 if (!visited.has(n)) {
                   const info = neInfo[n];
                   const hasAlarm = alarmedNes.has(n);
+                  visibleNes.add(n);
                   extraRoots.push({
                     name: n,
                     itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: isLarge ? 1 : 2 },
@@ -191,10 +213,10 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
             <Collapse size="small" ghost
               items={[{
                 key: 'link-table',
-                label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>链路端口明细 ({filteredLinks.length} 条)</Typography.Text>,
+                label: <Typography.Text type="secondary" style={{ fontSize: 11 }}>链路端口明细 ({(hideHealthy ? filteredLinks.filter(l => visibleLinks.has(`${l.source}↔${l.target}`) || visibleLinks.has(`${l.target}↔${l.source}`)) : filteredLinks).length} 条)</Typography.Text>,
                 children: (
                   <Table size="small" pagination={false}
-                    dataSource={filteredLinks.map((l: any, i: number) => ({ ...l, key: i }))}
+                    dataSource={(hideHealthy ? filteredLinks.filter(l => visibleLinks.has(`${l.source}↔${l.target}`) || visibleLinks.has(`${l.target}↔${l.source}`)) : filteredLinks).map((l: any, i: number) => ({ ...l, key: i }))}
                     columns={[
                       { title: 'A端', dataIndex: 'source', width: 160, ellipsis: true },
                       { title: 'A端端口', dataIndex: 'source_port', width: 180, ellipsis: true, render: (v: string) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v}</div> },
