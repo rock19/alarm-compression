@@ -116,7 +116,7 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
               const rootNe = neOrder.find(n => alarmedNes.has(n)) || neOrder[0];
               const visited = new Set<string>();
               const buildTree = (ne: string, depth: number): any => {
-                if (visited.has(ne) || depth > 8) return null;
+                if (visited.has(ne)) return null;
                 visited.add(ne);
                 const info = neInfo[ne];
                 const hasAlarm = alarmedNes.has(ne);

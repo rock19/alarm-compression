@@ -239,7 +239,7 @@ function FiberTopo({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
   useEffect(() => {
     if (nes.length < 1) return;
     setLoading(true);
-    api.getNENeighbors(nes.slice(0, 20)).then((r: any) => {
+    api.getNENeighbors(nes.slice(0, 200)).then((r: any) => {
       if (r.links?.length > 0) setLinks(r.links);
       else setLinks([]);
     }).catch(() => setLinks([])).finally(() => setLoading(false));
