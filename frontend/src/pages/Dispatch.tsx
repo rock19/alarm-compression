@@ -171,15 +171,17 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
                 series: [{
                   type: 'tree',
                   data: treeData ? [treeData, ...extraRoots] : extraRoots,
-                  top: '3%', left: '5%', bottom: '3%', right: '10%',
+                  top: '2%', left: '3%', bottom: '2%', right: '8%',
                   symbol: 'circle',
-                  symbolSize: 16,
+                  symbolSize: 12,
                   roam: true,
                   expandAndCollapse: true,
-                  initialTreeDepth: 3,
+                  initialTreeDepth: -1,
                   orient: 'LR',
                   layout: 'orthogonal',
                   edgeShape: 'curve',
+                  nodeWidth: 20,
+                  nodeHeight: 20,
                   label: {
                     position: 'bottom', verticalAlign: 'top', align: 'center',
                     fontSize: 10, distance: 6,
@@ -216,7 +218,7 @@ function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
                   emphasis: { focus: 'descendant', lineStyle: { color: '#333', width: 2.5 } },
                 }],
               };
-            })()} style={{ height: 380 }} />
+            })()} style={{ height: Math.max(380, fullNes.length * 14) }} />
             <Collapse size="small" ghost
               items={[{
                 key: 'link-table',
