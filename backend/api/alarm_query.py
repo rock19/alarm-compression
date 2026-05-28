@@ -55,6 +55,7 @@ async def _run_query_alarms(
             verify=False, timeout=120.0,
             limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
         )
+        ems_list = None
         # Stage 1: Fetch EMS list (0-5%)
         if not ems_ids:
             _update_progress(task_id, 0, "正在获取网管列表...")
@@ -74,11 +75,32 @@ async def _run_query_alarms(
         total = 0
         grand_total_pages = 0
         pages_done = 0
-        eids = [e.strip() for e in ems_ids.split(",") if e.strip()]
+        eids_raw = [e.strip() for e in ems_ids.split(",") if e.strip()]
         MAX_RETRIES = 3
 
+        # Filter EMSs: match spec_id to speciality name via NMS API
+        if ems_list:
+            spec_list = await fetch_spec_list()
+            spec_name = ""
+            for s in spec_list:
+                if str(s.get("id", "")) == spec_id:
+                    spec_name = s.get("name", "")
+                    break
+            if spec_name:
+                matched = [e for e in ems_list if spec_name in e.get("speciality", "")]
+                other = [e for e in ems_list if e not in matched]
+                eids = [e["id"] for e in matched]
+                skipped = len(other)
+                _update_progress(task_id, 2, f"匹配到{len(eids)}个{spec_name}网管" + (f"（跳过{skipped}个）" if skipped else ""))
+                if not eids:
+                    _update_progress(task_id, 0, "failed", error=f"未找到{spec_name}专业的网管（共{len(ems_list)}个网管）")
+                    return
+            else:
+                eids = eids_raw
+        else:
+            eids = eids_raw
+
         # First pass: get page 1 of each EMS to know total pages
-        _update_progress(task_id, 2, f"共 {len(eids)} 个网管，获取页数信息...")
         ems_info = []
         for ei, eid in enumerate(eids):
             result = await query_alarm_history(sdt, edt, spec_id, eid, 1, PAGE_SIZE, client=shared_client)

@@ -79,7 +79,7 @@ async def fetch_ems_list(shared_client: Optional[httpx.AsyncClient] = None) -> t
         if data.get("status") != 1:
             return [], f"EMS列表查询失败: {data.get('msg', '未知错误')}"
         rows = data.get("data", {}).get("rowData", [])
-        result = [{"id": r.get("ID", ""), "name": r.get("NAME", "")} for r in rows if r.get("ID")]
+        result = [{"id": r.get("ID", ""), "name": r.get("NAME", ""), "speciality": r.get("SPECIALITY", "")} for r in rows if r.get("ID")]
         if not result:
             return [], "EMS列表为空"
         return result, ""
@@ -124,8 +124,13 @@ async def query_alarm_history(
 
     async def _do_query(cl: httpx.AsyncClient):
         url = f"{base}/alarmManage/QueryAlarmRecord"
+        if page == 1:  # Log first page of each EMS
+            print(f"[alarm_api] Query: {url}?specId={spec_id}&emsId={ems_id[:16]}...&sDate={start_date}&eDate={end_date}&page={page}&limit={limit}", flush=True)
         resp = await cl.get(url, params=params, headers={"token": token})
         data = resp.json()
+        if page == 1:
+            inner = data.get("data", {}) if isinstance(data, dict) else {}
+            print(f"[alarm_api] Response: status={data.get('status')} total={inner.get('total',0)} rows={len(inner.get('rows',[]))}", flush=True)
         if data.get("status") == 1:
             inner = data.get("data", {})
             return {"rows": inner.get("rows", []), "total": inner.get("total", 0)}
