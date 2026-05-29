@@ -203,7 +203,7 @@ export default function Rules() {
     setLoading(false);
   };
 
-  useEffect(() => { if (computed) fetchRules(); }, [page, activeRound, search, selectedNm]);
+  useEffect(() => { if (computed) fetchRules(); }, [computed, page, activeRound, search, selectedNm]);
 
   const columns = [
     {
