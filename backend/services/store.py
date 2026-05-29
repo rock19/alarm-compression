@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 
 DATA_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "alarm_data.json")
+ALARMS_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "alarm_records.json")
 SIM_DATA_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "sim_data.json")
 
 
@@ -32,7 +33,8 @@ class Store:
         self._dispatch_result: Optional[dict] = None
         self._fiber_events: list[dict] = []
         self._uploaded_at: Optional[datetime] = None
-        self._load()
+        self._loaded = False
+        # Load sim data only (small file, <1MB). Main data loaded on-demand.
         self._load_sim()
 
     # ── Alarms (historical, for FP-Growth) ──
@@ -41,10 +43,43 @@ class Store:
         self._alarms = alarms
         self._meta = meta
         self._uploaded_at = datetime.now()
+        self._loaded = True
         self._stats_cache = None  # Invalidate stats cache
-        self._save()
+        self._save_meta()
+        self._save_alarms()
+
+    def _ensure_loaded(self):
+        """Lazy-load all data from disk on first access."""
+        if self._loaded:
+            return
+        self._loaded = True
+        try:
+            if os.path.exists(DATA_FILE):
+                with open(DATA_FILE, "r") as f:
+                    data = json.load(f, object_hook=_deserialize_datetime)
+                self._meta = data.get("meta", {})
+                saved_results = data.get("results", {})
+                for nm, res in saved_results.items():
+                    self._results[nm] = {
+                        "round1": res.get("round1", {}),
+                        "round2": res.get("round2", {}),
+                    }
+                saved_graph = data.get("ne_graph", {})
+                self._ne_graph = {k: set(v) for k, v in saved_graph.items()}
+                self._diagnostic_trees = data.get("diagnostic_trees", [])
+                self._dispatch_result = data.get("dispatch_result")
+                self._fiber_events = data.get("fiber_events", [])
+                self._uploaded_at = datetime.fromisoformat(data["uploaded_at"]) if data.get("uploaded_at") else None
+                print(f"[store] Loaded meta: {len(self._results)} FP-Growth, {len(self._ne_graph)} NE graph")
+            if os.path.exists(ALARMS_FILE):
+                with open(ALARMS_FILE, "r") as f:
+                    self._alarms = json.load(f, object_hook=_deserialize_datetime)
+                print(f"[store] Loaded {len(self._alarms)} alarms")
+        except Exception as e:
+            print(f"[store] Failed to load: {e}")
 
     def get_alarms(self) -> list[dict]:
+        self._ensure_loaded()
         return self._alarms
 
     def get_cached_stats(self) -> Optional[dict]:
@@ -106,20 +141,24 @@ class Store:
             print(f"[store] Failed to load sim data: {e}")
 
     def get_meta(self) -> dict:
+        self._ensure_loaded()
         return self._meta
 
     # ── FP-Growth results ──
 
     def clear_results(self):
+        self._ensure_loaded()
         self._results = {}
         self._diagnostic_trees = []
-        self._save()
+        self._save_meta()
 
     def set_result(self, network_manager: str, result: dict):
+        self._ensure_loaded()
         self._results[network_manager] = result
-        self._save()
+        self._save_meta()
 
     def get_result(self, network_manager: str | None = None) -> dict | None:
+        self._ensure_loaded()
         if network_manager:
             return self._results.get(network_manager)
         if not self._results:
@@ -135,46 +174,51 @@ class Store:
         }
 
     def get_network_managers(self) -> list[str]:
+        self._ensure_loaded()
         return sorted(self._results.keys())
 
     # ── NE topology graph ──
 
     def set_ne_graph(self, graph: dict[str, set[str]]):
+        self._ensure_loaded()
         self._ne_graph = graph
-        self._save()
+        self._save_meta()
 
     def get_ne_graph(self) -> dict[str, set[str]]:
+        self._ensure_loaded()
         return self._ne_graph
 
     # ── Diagnostic trees ──
 
     def set_diagnostic_trees(self, trees: list[dict]):
+        self._ensure_loaded()
         self._diagnostic_trees = trees
-        self._save()
+        self._save_meta()
 
     def get_diagnostic_trees(self) -> list[dict]:
+        self._ensure_loaded()
         return self._diagnostic_trees
 
     # ── Dispatch / Fiber cut results ──
 
     def set_dispatch_result(self, result: dict):
         self._dispatch_result = result
-        self._save()
+        self._save_meta()
 
     def get_dispatch_result(self) -> Optional[dict]:
         return self._dispatch_result
 
     def set_fiber_events(self, events: list[dict]):
         self._fiber_events = events
-        self._save()
+        self._save_meta()
 
     def get_fiber_events(self) -> list[dict]:
         return self._fiber_events
 
     # ── Persistence ──
 
-    def _save(self):
-        """Persist all state to file."""
+    def _save_meta(self):
+        """Persist metadata (rules, graphs, trees) — excludes alarm records."""
         try:
             results_copy = {}
             for nm, res in self._results.items():
@@ -182,10 +226,8 @@ class Store:
                     "round1": res.get("round1", {}),
                     "round2": res.get("round2", {}),
                 }
-            # Convert set values to lists for JSON
             ne_graph_copy = {k: list(v) for k, v in self._ne_graph.items()}
             data = {
-                "alarms": self._alarms,
                 "meta": self._meta,
                 "results": results_copy,
                 "ne_graph": ne_graph_copy,
@@ -197,37 +239,15 @@ class Store:
             with open(DATA_FILE, "w") as f:
                 json.dump(data, f, default=_serialize_datetime, ensure_ascii=False, indent=2)
         except Exception as e:
-            print(f"[store] Failed to save: {e}")
+            print(f"[store] Failed to save meta: {e}")
 
-    def _load(self):
-        """Load persisted state on startup."""
+    def _save_alarms(self):
+        """Persist alarm records to separate file."""
         try:
-            if os.path.exists(DATA_FILE):
-                with open(DATA_FILE, "r") as f:
-                    data = json.load(f, object_hook=_deserialize_datetime)
-                self._alarms = data.get("alarms", [])
-                self._meta = data.get("meta", {})
-                # Restore FP-Growth results
-                saved_results = data.get("results", {})
-                for nm, res in saved_results.items():
-                    self._results[nm] = {
-                        "round1": res.get("round1", {}),
-                        "round2": res.get("round2", {}),
-                    }
-                # Restore NE graph (convert lists back to sets)
-                saved_graph = data.get("ne_graph", {})
-                self._ne_graph = {k: set(v) for k, v in saved_graph.items()}
-                # Restore diagnostic trees
-                self._diagnostic_trees = data.get("diagnostic_trees", [])
-                # Restore dispatch/fiber results
-                self._dispatch_result = data.get("dispatch_result")
-                self._fiber_events = data.get("fiber_events", [])
-                uploaded = data.get("uploaded_at")
-                self._uploaded_at = datetime.fromisoformat(uploaded) if uploaded else None
-                print(f"[store] Loaded {len(self._alarms)} alarms, {len(self._results)} FP-Growth, "
-                      f"{len(self._ne_graph)} NE graph entries, {len(self._diagnostic_trees)} trees from {DATA_FILE}")
+            with open(ALARMS_FILE, "w") as f:
+                json.dump(self._alarms, f, default=_serialize_datetime, ensure_ascii=False)
         except Exception as e:
-            print(f"[store] Failed to load: {e}")
+            print(f"[store] Failed to save alarms: {e}")
 
 
 store = Store()
