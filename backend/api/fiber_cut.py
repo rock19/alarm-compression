@@ -170,7 +170,11 @@ def _build_fiber_event(tg: list[dict], ne_graph: dict[str, set[str]],
             if nb in tg_nes and nb not in visited:
                 queue.append(nb)
 
-    all_affected = ordered_nes if ordered_nes else sorted(tg_nes)
+    # If topology only found a few NEs but time group has many, include all alarmed NEs
+    if len(ordered_nes) < len(tg_nes) * 0.5:
+        all_affected = sorted(tg_nes)
+    else:
+        all_affected = ordered_nes if ordered_nes else sorted(tg_nes)
     event_alarms = [a for a in tg if a.get("ne", "") in all_affected]
 
     if len(event_alarms) < 2:
