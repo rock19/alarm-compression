@@ -69,7 +69,7 @@ def parse_time(ts: str) -> datetime | None:
 
 
 def _split_into_time_windows(alarms: list[dict]) -> list[list[dict]]:
-    """Split alarms into time-based windows. Gap > 30 min or span > 120 min creates new window."""
+    """Split alarms into time-based windows. Gap > 15 min or span > 60 min creates new window."""
     parsed = []
     for a in alarms:
         pt = parse_time(a.get("first_time", "") or a.get("time", ""))
@@ -96,7 +96,7 @@ def _split_into_time_windows(alarms: list[dict]) -> list[list[dict]]:
                 continue
             gap = abs((pt - last_t).total_seconds()) / 60
             span = abs((pt - cur_start).total_seconds()) / 60 if cur_start != datetime.max else 0
-            if gap > 30 or span > 120:
+            if gap > 15 or span > 60:
                 windows.append(cur)
                 cur = [a]; cur_start = pt
             else:

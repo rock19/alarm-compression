@@ -10,7 +10,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
 
   useEffect(() => {
     if (nes.length === 0) return;
-    api.getNENeighbors(nes.slice(0, 200)).then((r: any) => {
+    api.getNENeighbors(nes.slice(0, 500)).then((r: any) => {
       if (r.links?.length > 0) {
         setLinks(r.links);
         const allNes = new Set(nes);
@@ -117,6 +117,28 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
         children: (
           <>
             <ReactECharts option={(() => {
+              // Build effective adjacency: when hideHealthy, connect visible NEs directly (skip hidden)
+              const effectiveAdj: Record<string, string[]> = {};
+              if (hideHealthy && displayVisibleNes) {
+                // BFS from each visible node to find nearest visible neighbor
+                for (const ne of displayVisibleNes) {
+                  effectiveAdj[ne] = [];
+                  const seen = new Set<string>([ne]);
+                  const queue = [...(adj[ne] || [])];
+                  while (queue.length > 0) {
+                    const cur = queue.shift()!;
+                    if (seen.has(cur)) continue;
+                    seen.add(cur);
+                    if (displayVisibleNes.has(cur)) {
+                      effectiveAdj[ne].push(cur);
+                      continue; // Found nearest visible, don't go deeper on this branch
+                    }
+                    (adj[cur] || []).forEach(p => { if (!seen.has(p)) queue.push(p); });
+                  }
+                }
+              }
+              const useAdj = (hideHealthy && displayVisibleNes) ? effectiveAdj : adj;
+
               const rootNe = neOrder.find(n => alarmedNes.has(n)) || neOrder[0];
               const visited = new Set<string>();
 
@@ -127,7 +149,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                 const info = neInfo[ne];
                 const hasAlarm = alarmedNes.has(ne);
                 const children: any[] = [];
-                (adj[ne] || []).forEach(peer => {
+                (useAdj[ne] || []).forEach(peer => {
                   const child = buildTree(peer, depth + 1);
                   if (child) children.push(child);
                 });
