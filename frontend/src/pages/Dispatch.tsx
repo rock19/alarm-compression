@@ -46,7 +46,7 @@ function FiberCutAnalysis({ workOrders }: { workOrders: any[] }) {
   if (!events || events.length === 0) return null;
 
   // Sort: multi-NE (red/urgent) first, single-NE (orange) last
-  const sorted = [...events].sort((a, b) => (b.fiber_ne_count || 0) - (a.fiber_ne_count || 0));
+  const sorted = [...events].sort((a, b) => (b.alarmed_ne_count || 0) - (a.alarmed_ne_count || 0));
 
   return (
     <Card title={<><AlertOutlined /> 光缆中断检测 ({events.length} 处疑似断点)</>}
@@ -54,11 +54,11 @@ function FiberCutAnalysis({ workOrders }: { workOrders: any[] }) {
       {sorted.map((ev: any, i: number) => {
         const evAlarms = ev.event_alarms || [];
         const evNes = [...new Set(evAlarms.map((a: any) => a.ne))] as string[];
-        const isMulti = (ev.fiber_ne_count || 0) >= 2;
+        const isMulti = (ev.alarmed_ne_count || 0) >= 2;
         return (
         <Card key={i} size="small" style={{ marginBottom: 8 }}
           title={<>
-            <Tag color={isMulti ? 'red' : 'orange'}>{isMulti ? '紧急' : '重要'}</Tag>
+            <Tag color={isMulti ? 'red' : 'orange'}>{isMulti ? '多网元' : '单网元'}</Tag>
             <span style={{ fontWeight: 700 }}>{ev.title}</span>
             <Tag>压缩比 {ev.compression_ratio}</Tag>
             <Tag color="orange">{ev.affected_ne_count}站 {evAlarms.length}条告警</Tag>

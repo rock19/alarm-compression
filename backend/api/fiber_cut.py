@@ -26,7 +26,10 @@ class FiberCutEvent(BaseModel):
     compression_ratio: str
     original_scenario: str
     priority: str = "紧急"
+    fiber_ne_count: int = 0
+    alarmed_ne_count: int = 0
     event_alarms: list[dict] = []
+    topology_path: list[str] = []
 
 
 class FiberCutResponse(BaseModel):
@@ -238,8 +241,10 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
                 topology_path.append(f"{b} → {a}")
 
         fiber_ne_count = len(comp_nes)
+        alarmed_ne_count = len(set(a.get("ne", "") for a in event_alarms))
         events.append({
             "fiber_ne_count": fiber_ne_count,
+            "alarmed_ne_count": alarmed_ne_count,
             "title": f"光缆中断{time_label} — {segment}",
             "description": desc,
             "cut_segment": segment,
