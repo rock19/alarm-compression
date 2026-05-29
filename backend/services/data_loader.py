@@ -92,6 +92,7 @@ def load_excel(file_path: str) -> tuple[list[dict], dict]:
     ]
 
     records = []
+    skipped = 0
     for row in ws.iter_rows(min_row=2, values_only=True):
         record = {}
         for std_name, fallback_idx in STD_COLS:
@@ -102,8 +103,11 @@ def load_excel(file_path: str) -> tuple[list[dict], dict]:
             record["发生时间"] = _parse_datetime(record.get("发生时间"))
             record["恢复时间"] = _parse_datetime(record.get("恢复时间"))
             records.append(record)
+        else:
+            skipped += 1
 
     wb.close()
+    print(f"[data_loader] {os.path.basename(file_path)}: {len(records)} valid + {skipped} skipped (missing required fields)")
 
     meta = {
         "total_records": len(records),
