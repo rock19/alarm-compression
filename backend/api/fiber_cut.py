@@ -69,7 +69,7 @@ def parse_time(ts: str) -> datetime | None:
 
 
 def _split_into_time_windows(alarms: list[dict]) -> list[list[dict]]:
-    """Split alarms into time-based windows. Gap > 15 min or span > 60 min creates new window."""
+    """Split alarms into time-based windows. Gap > 5 min or span > 30 min creates new window."""
     parsed = []
     for a in alarms:
         pt = parse_time(a.get("first_time", "") or a.get("time", ""))
@@ -96,7 +96,7 @@ def _split_into_time_windows(alarms: list[dict]) -> list[list[dict]]:
                 continue
             gap = abs((pt - last_t).total_seconds()) / 60
             span = abs((pt - cur_start).total_seconds()) / 60 if cur_start != datetime.max else 0
-            if gap > 15 or span > 60:
+            if gap > 5 or span > 30:
                 windows.append(cur)
                 cur = [a]; cur_start = pt
             else:
@@ -228,6 +228,15 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
         if len(tg_times) >= 2:
             time_label = f" [{min(tg_times).strftime('%m-%d %H:%M')} ~ {max(tg_times).strftime('%m-%d %H:%M')}]"
 
+        # Build topology path for verification
+        topology_path = []
+        for i in range(len(ordered) - 1):
+            a, b = ordered[i], ordered[i+1]
+            if b in ne_graph.get(a, set()):
+                topology_path.append(f"{a} → {b}")
+            elif a in ne_graph.get(b, set()):
+                topology_path.append(f"{b} → {a}")
+
         fiber_ne_count = len(comp_nes)
         events.append({
             "fiber_ne_count": fiber_ne_count,
@@ -241,6 +250,7 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
             "original_scenario": source_label,
             "priority": "紧急" if fiber_ne_count >= 2 else "重要",
             "event_alarms": event_alarms,
+            "topology_path": topology_path,
         })
 
     return events
