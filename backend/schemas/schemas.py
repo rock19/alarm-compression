@@ -126,3 +126,4 @@ class Scenario(BaseModel):
 class DiagnosticTreeResponse(BaseModel):
     scenarios: list[Scenario]
     total_rules_analyzed: int
+    cached: bool = False

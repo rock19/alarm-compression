@@ -20,14 +20,20 @@ def _deserialize_datetime(dct):
 
 
 class Store:
-    """In-memory store with optional file persistence."""
+    """In-memory store with file persistence."""
 
     def __init__(self):
         self._alarms: list[dict] = []
         self._meta: dict = {}
         self._results: dict[str, dict] = {}
+        self._ne_graph: dict[str, set[str]] = {}
+        self._diagnostic_trees: list[dict] = []
+        self._dispatch_result: Optional[dict] = None
+        self._fiber_events: list[dict] = []
         self._uploaded_at: Optional[datetime] = None
         self._load()
+
+    # ── Alarms ──
 
     def set_alarms(self, alarms: list[dict], meta: dict):
         self._alarms = alarms
@@ -35,15 +41,18 @@ class Store:
         self._uploaded_at = datetime.now()
         self._save()
 
-    def clear_results(self):
-        self._results = {}
-        self._save()
-
     def get_alarms(self) -> list[dict]:
         return self._alarms
 
     def get_meta(self) -> dict:
         return self._meta
+
+    # ── FP-Growth results ──
+
+    def clear_results(self):
+        self._results = {}
+        self._diagnostic_trees = []
+        self._save()
 
     def set_result(self, network_manager: str, result: dict):
         self._results[network_manager] = result
@@ -67,26 +76,61 @@ class Store:
     def get_network_managers(self) -> list[str]:
         return sorted(self._results.keys())
 
+    # ── NE topology graph ──
+
     def set_ne_graph(self, graph: dict[str, set[str]]):
         self._ne_graph = graph
+        self._save()
 
     def get_ne_graph(self) -> dict[str, set[str]]:
-        return getattr(self, "_ne_graph", {})
+        return self._ne_graph
+
+    # ── Diagnostic trees ──
+
+    def set_diagnostic_trees(self, trees: list[dict]):
+        self._diagnostic_trees = trees
+        self._save()
+
+    def get_diagnostic_trees(self) -> list[dict]:
+        return self._diagnostic_trees
+
+    # ── Dispatch / Fiber cut results ──
+
+    def set_dispatch_result(self, result: dict):
+        self._dispatch_result = result
+        self._save()
+
+    def get_dispatch_result(self) -> Optional[dict]:
+        return self._dispatch_result
+
+    def set_fiber_events(self, events: list[dict]):
+        self._fiber_events = events
+        self._save()
+
+    def get_fiber_events(self) -> list[dict]:
+        return self._fiber_events
+
+    # ── Persistence ──
 
     def _save(self):
-        """Persist alarms, meta, and FP-Growth results to file."""
+        """Persist all state to file."""
         try:
-            # Serialize results: convert rules to JSON-safe format
             results_copy = {}
             for nm, res in self._results.items():
                 results_copy[nm] = {
                     "round1": res.get("round1", {}),
                     "round2": res.get("round2", {}),
                 }
+            # Convert set values to lists for JSON
+            ne_graph_copy = {k: list(v) for k, v in self._ne_graph.items()}
             data = {
                 "alarms": self._alarms,
                 "meta": self._meta,
                 "results": results_copy,
+                "ne_graph": ne_graph_copy,
+                "diagnostic_trees": self._diagnostic_trees,
+                "dispatch_result": self._dispatch_result,
+                "fiber_events": self._fiber_events,
                 "uploaded_at": self._uploaded_at.isoformat() if self._uploaded_at else None,
             }
             with open(DATA_FILE, "w") as f:
@@ -95,7 +139,7 @@ class Store:
             print(f"[store] Failed to save: {e}")
 
     def _load(self):
-        """Load persisted alarms and results on startup."""
+        """Load persisted state on startup."""
         try:
             if os.path.exists(DATA_FILE):
                 with open(DATA_FILE, "r") as f:
@@ -109,9 +153,18 @@ class Store:
                         "round1": res.get("round1", {}),
                         "round2": res.get("round2", {}),
                     }
+                # Restore NE graph (convert lists back to sets)
+                saved_graph = data.get("ne_graph", {})
+                self._ne_graph = {k: set(v) for k, v in saved_graph.items()}
+                # Restore diagnostic trees
+                self._diagnostic_trees = data.get("diagnostic_trees", [])
+                # Restore dispatch/fiber results
+                self._dispatch_result = data.get("dispatch_result")
+                self._fiber_events = data.get("fiber_events", [])
                 uploaded = data.get("uploaded_at")
                 self._uploaded_at = datetime.fromisoformat(uploaded) if uploaded else None
-                print(f"[store] Loaded {len(self._alarms)} alarms, {len(self._results)} FP-Growth results from {DATA_FILE}")
+                print(f"[store] Loaded {len(self._alarms)} alarms, {len(self._results)} FP-Growth, "
+                      f"{len(self._ne_graph)} NE graph entries, {len(self._diagnostic_trees)} trees from {DATA_FILE}")
         except Exception as e:
             print(f"[store] Failed to load: {e}")
 

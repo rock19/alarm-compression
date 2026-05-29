@@ -105,6 +105,15 @@ async def get_diagnostic_trees(network_manager: str = "all"):
     if not result:
         raise HTTPException(status_code=400, detail="请先运行FP-Growth计算")
 
+    # Return cached trees if available
+    cached = store.get_diagnostic_trees()
+    if cached:
+        return DiagnosticTreeResponse(
+            scenarios=cached,
+            total_rules_analyzed=sum(s.get("rule_count", 0) for s in cached),
+            cached=True,
+        )
+
     all_rules = result["round1"]["rules"] + result["round2"]["rules"]
 
     seen: dict[tuple, dict] = {}
@@ -118,6 +127,7 @@ async def get_diagnostic_trees(network_manager: str = "all"):
         return DiagnosticTreeResponse(scenarios=[], total_rules_analyzed=0)
 
     scenarios = build_diagnostic_trees(unique_rules)
+    store.set_diagnostic_trees(scenarios)
 
     # Build alarm name → description mapping
     alarms = store.get_alarms()
