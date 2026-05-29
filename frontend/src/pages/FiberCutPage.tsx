@@ -28,8 +28,6 @@ export default function FiberCutPage() {
         const cached = await api.fiberCutCached() as any;
         if (cached?.events?.length) {
           setFiberEvents(cached.events);
-          try { const vr = await api.validateStore() as any; setResult(vr); }
-          catch { setResult({ total_alarms: 0 }); }
         }
       } catch {}
       setCacheLoading(false);
