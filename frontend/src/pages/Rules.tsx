@@ -175,6 +175,7 @@ export default function Rules() {
     // Check if FP-Growth has already been run (rules persisted)
     api.getRules({ page: 1, page_size: 1 }).then((r: any) => {
       if (r && r.total > 0) {
+        setLoading(true);
         setComputed(true);
       }
     }).catch(() => {});
