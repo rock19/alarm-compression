@@ -203,6 +203,15 @@ function GuidanceButton({ wo }: { wo: any }) {
 
 export default function Dispatch() {
   const [valResult, setValResult] = useState<ValidateResult | null>(null);
+
+  // Auto-load cached dispatch result on mount
+  useEffect(() => {
+    api.dispatchCached().then((r: any) => {
+      if (r && r.work_orders?.length > 0) {
+        setValResult(r);
+      }
+    }).catch(() => {});
+  }, []);
   const [loading, setLoading] = useState(false);
   const [apiCurLoading, setApiCurLoading] = useState(false);
   const [apiHistLoading, setApiHistLoading] = useState(false);

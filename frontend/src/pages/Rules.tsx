@@ -165,11 +165,17 @@ export default function Rules() {
   const [page, setPage] = useState(1);
   const [activeRound, setActiveRound] = useState('all');
 
-  // Fetch available network managers on mount
+  // Fetch available network managers on mount, and check for existing rules
   useEffect(() => {
     api.getStats().then((s: any) => {
       if (s && s.network_managers) {
         setNmOptions(s.network_managers.filter((n: string) => n));
+      }
+    }).catch(() => {});
+    // Check if FP-Growth has already been run (rules persisted)
+    api.getRules({ page: 1, page_size: 1 }).then((r: any) => {
+      if (r && r.total > 0) {
+        setComputed(true);
       }
     }).catch(() => {});
   }, []);
