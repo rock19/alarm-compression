@@ -72,6 +72,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
   let displayNes = fullNes.length;
   let displayLinks = filteredLinks.length;
   let displayFilteredLinks = filteredLinks;
+  let displayVisibleNes: Set<string> | null = null;
   if (hideHealthy) {
     const hasAlarmBelow = (ne: string, seen: Set<string>): boolean => {
       if (seen.has(ne)) return false;
@@ -90,6 +91,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
     };
     neOrder.forEach(n => walk(n, new Set()));
     displayNes = visibleSet.size;
+    displayVisibleNes = visibleSet;
     displayFilteredLinks = filteredLinks.filter(l => visibleSet.has(l.source) && visibleSet.has(l.target));
     displayLinks = displayFilteredLinks.length;
   }
@@ -120,11 +122,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
 
               const buildTree = (ne: string, depth: number): any => {
                 if (visited.has(ne)) return null;
-                if (hideHealthy) {
-                  const visibleSet = new Set<string>();
-                  displayFilteredLinks.forEach(l => { visibleSet.add(l.source); visibleSet.add(l.target); });
-                  if (!visibleSet.has(ne)) return null;
-                }
+                if (hideHealthy && displayVisibleNes && !displayVisibleNes.has(ne)) return null;
                 visited.add(ne);
                 const info = neInfo[ne];
                 const hasAlarm = alarmedNes.has(ne);
