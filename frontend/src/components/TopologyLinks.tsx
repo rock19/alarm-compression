@@ -6,7 +6,7 @@ import { api } from '../api/client';
 export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
   const [links, setLinks] = useState<any[] | null>(null);
   const [fullNes, setFullNes] = useState<string[]>(nes);
-  const [hideHealthy, setHideHealthy] = useState(true);
+  const [hideHealthy, setHideHealthy] = useState(false);
 
   useEffect(() => {
     if (nes.length === 0) return;
