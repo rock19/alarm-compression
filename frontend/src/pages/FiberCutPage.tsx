@@ -212,7 +212,7 @@ export default function FiberCutPage() {
               title={<><Tag color={isMulti ? 'red' : 'orange'}>{isMulti ? '多网元' : '单网元'}</Tag><span style={{ fontWeight: 700 }}>{ev.title}</span>
                 <Tag>压缩比 {ev.compression_ratio}</Tag><Tag color="orange">{ev.affected_ne_count}站 {evAlarms.length}条</Tag></>}>
               <p style={{ fontSize: 13, color: '#cf1322', fontWeight: 600 }}>
-                断点: {ev.cut_segment} | 受影响: {ev.affected_nes?.join(' → ')}
+                断点: {ev.cut_segment} | {ev.time_start && ev.time_end ? `${ev.time_start} ~ ${ev.time_end} | ` : ''}受影响: {ev.affected_nes?.join(' → ')}
               </p>
               <TopologyLinks nes={evNes} alarms={evAlarms} />
               <Collapse size="small" ghost items={[{ key: 'detail', label: `告警明细 (${evAlarms.length} 条)`,

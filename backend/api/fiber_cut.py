@@ -30,6 +30,8 @@ class FiberCutEvent(BaseModel):
     alarmed_ne_count: int = 0
     event_alarms: list[dict] = []
     topology_path: list[str] = []
+    time_start: str = ""
+    time_end: str = ""
 
 
 class FiberCutResponse(BaseModel):
@@ -227,9 +229,9 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
         for a in tg:
             t = parse_time(a.get("first_time", "") or a.get("time", ""))
             if t: tg_times.append(t)
-        time_label = ""
-        if len(tg_times) >= 2:
-            time_label = f" [{min(tg_times).strftime('%m-%d %H:%M')} ~ {max(tg_times).strftime('%m-%d %H:%M')}]"
+        time_start = min(tg_times).strftime('%m-%d %H:%M') if tg_times else ""
+        time_end = max(tg_times).strftime('%m-%d %H:%M') if tg_times else ""
+        time_label = f" [{time_start} ~ {time_end}]" if len(tg_times) >= 2 else ""
 
         # Build topology path for verification
         topology_path = []
@@ -256,6 +258,8 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
             "priority": "紧急" if fiber_ne_count >= 2 else "重要",
             "event_alarms": event_alarms,
             "topology_path": topology_path,
+            "time_start": time_start,
+            "time_end": time_end,
         })
 
     return events

@@ -64,7 +64,7 @@ function FiberCutAnalysis({ workOrders }: { workOrders: any[] }) {
             <Tag color="orange">{ev.affected_ne_count}站 {evAlarms.length}条告警</Tag>
           </>}>
           <p style={{ fontSize: 13, color: '#cf1322', fontWeight: 600 }}>
-            断点: {ev.cut_segment} | 受影响: {ev.affected_nes?.join(' → ')}
+            断点: {ev.cut_segment} | {ev.time_start && ev.time_end ? `${ev.time_start} ~ ${ev.time_end} | ` : ''}受影响: {ev.affected_nes?.join(' → ')}
           </p>
           <TopologyLinks nes={evNes} alarms={evAlarms} />
           <Collapse size="small" ghost items={[{ key: 'detail', label: `告警明细 (${evAlarms.length} 条)`,
