@@ -102,13 +102,15 @@ export default function FiberCutPage() {
     setLoading(false);
   };
 
-  // Fiber-cut-specific computed stats
+  // Fiber-cut-specific stats — all from fiberCutDetect response, not validateStore
   const fiberAlarmCount = fiberEvents.reduce((sum: number, ev: any) => sum + (ev.alarm_count || 0), 0);
-  const unmatchedFiberCount = (result?.total_alarms || 0) - fiberAlarmCount;
+  const totalAlarms = result?.total_alarms || 0;
+  const unmatchedFiberCount = Math.max(0, totalAlarms - fiberAlarmCount);
 
-  // Unique NEs affected by fiber events
+  // Unique NEs + unique stations across all events
   const affectedNEs = new Set(fiberEvents.flatMap((ev: any) => ev.affected_nes || []));
   const affectedNECount = affectedNEs.size;
+  const totalEventAlarms = fiberEvents.reduce((sum: number, ev: any) => sum + (ev.alarm_count || 0), 0);
 
   // Build alarm keys from fiber events to exclude from unmatched table
   const fiberAlarmKeys = new Set(
@@ -187,7 +189,7 @@ export default function FiberCutPage() {
 
       {result && (
         <Row gutter={[8, 8]} style={{ marginBottom: 16 }}>
-          <Col span={4}><Card size="small"><Statistic title="告警总数" value={result.total_alarms} /></Card></Col>
+          <Col span={4}><Card size="small"><Statistic title="告警总数" value={totalAlarms} /></Card></Col>
           <Col span={4}><Card size="small"><Statistic title="光缆中断告警" value={fiberAlarmCount} suffix={<CheckCircleOutlined style={{ color: '#52c41a' }} />} /></Card></Col>
           <Col span={4}><Card size="small"><Statistic title="未命中光缆中断" value={unmatchedFiberCount} suffix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} /></Card></Col>
           <Col span={4}><Card size="small"><Statistic title="光缆事件" value={fiberEvents.length} suffix={<AlertOutlined style={{ color: '#cf1322' }} />} /></Card></Col>
