@@ -73,6 +73,8 @@ export const api = {
     request('/fiber-cut-analysis', { method: 'POST', body: JSON.stringify({ work_orders: workOrders }) }),
 
   fiberCutDetect: () => request('/fiber-cut-detect', { method: 'POST' }),
+  fiberCutCached: () => request('/fiber-cut-cached'),
+  dispatchCached: () => request('/dispatch-cached'),
 
   validateStore: () => request('/validate-store', { method: 'POST' }),
 };

@@ -290,6 +290,15 @@ async def validate_store():
             except: pass
 
 
+@router.get("/dispatch-cached")
+async def get_cached_dispatch():
+    """Get cached dispatch result (for menu switching persistence)."""
+    cached = store.get_dispatch_result()
+    if cached:
+        return cached
+    return {"work_orders": [], "total_alarms": 0, "message": "无缓存数据，请先导入模拟数据"}
+
+
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_alarms(file: UploadFile = File(...)):
     if not file.filename or not file.filename.endswith(".xlsx"):
@@ -661,7 +670,7 @@ async def validate_alarms(file: UploadFile = File(...)):
                 ))
 
     coverage = len(matched_alarms) / len(records) if records else 0
-    return ValidateResponse(
+    resp = ValidateResponse(
         total_alarms=len(records), matched_alarms=len(matched_alarms),
         unmatched_alarms=len(unmatched_details),
         matched_by_ne=matched_alarms, unmatched_names=sorted(unmatched_names),
@@ -670,3 +679,6 @@ async def validate_alarms(file: UploadFile = File(...)):
         compression_rate=round((1 - (len(unmatched_details) + len(work_orders)) / len(records)) * 100, 1) if records else 0,
         filtered_count=filtered_count, current_dedup_count=current_dedup_count,
     )
+    # Persist dispatch result for menu switching
+    store.set_dispatch_result(resp.model_dump())
+    return resp
