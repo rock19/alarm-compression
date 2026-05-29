@@ -106,124 +106,150 @@ def _split_into_time_windows(alarms: list[dict]) -> list[list[dict]]:
     return [w for w in windows if len(w) >= 2]
 
 
-def _build_fiber_event(tg: list[dict], ne_graph: dict[str, set[str]],
-                       source_label: str = "") -> dict | None:
-    """Try to build a fiber cut event from a time-grouped alarm cluster."""
+def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]],
+                                     source_label: str = "") -> list[dict]:
+    """Build fiber cut events from a time window using topology-chain aggregation.
+
+    Algorithm:
+    1. Find all NEs with fiber alarms
+    2. For each fiber NE, check connected neighbors for alarms (topology + time window)
+    3. Follow the chain: A→B(has alarm)→C(has alarm)→D(no alarm, stop)
+    4. Each connected component = one event
+    5. The cut segment = last alarmed NE ↔ first non-alarmed neighbor
+    """
     tg_nes = set(a.get("ne", "") for a in tg)
-    fiber_nes = set(a.get("ne", "") for a in tg if _is_fiber_alarm(a.get("name", "")))
-    deriv_nes = set(a.get("ne", "") for a in tg if _is_derivative(a.get("name", "")))
+    ne_alarms_map: dict[str, list[dict]] = {}
+    for a in tg:
+        ne = a.get("ne", "")
+        if ne:
+            ne_alarms_map.setdefault(ne, []).append(a)
 
-    # Need at least 1 fiber alarm NE and 2+ total alarms
-    fiber_alarms = [a for a in tg if _is_fiber_alarm(a.get("name", ""))]
-    deriv_alarms = [a for a in tg if _is_derivative(a.get("name", ""))]
-    if len(fiber_alarms) < 1 or len(tg) < 2:
-        return None
+    fiber_nes = {ne for ne in tg_nes if any(_is_fiber_alarm(a.get("name", "")) for a in ne_alarms_map.get(ne, []))}
+    if not fiber_nes:
+        return []
 
-    # Multi-NE case: find cut endpoint via topology
-    cut_endpoint = None
-    healthy_endpoint = None
-    if len(fiber_nes) >= 2:
-        for ne in fiber_nes:
+    # Build topology-constrained connected components
+    # Use Union-Find to group NEs that are topologically connected AND all have alarms
+    parent: dict[str, str] = {}
+    def find(x):
+        while parent.get(x, x) != x:
+            parent[x] = parent.get(parent[x], parent[x])
+            x = parent[x]
+        return x
+    def union(x, y):
+        rx, ry = find(x), find(y)
+        if rx != ry: parent[rx] = ry
+
+    for ne in fiber_nes:
+        parent.setdefault(ne, ne)
+
+    # Connect fiber NEs that are neighbors in topology
+    for ne in fiber_nes:
+        for peer in ne_graph.get(ne, set()):
+            if peer in fiber_nes:
+                union(ne, peer)
+
+    # Group into components
+    components: dict[str, list[str]] = {}
+    for ne in fiber_nes:
+        root = find(ne)
+        components.setdefault(root, []).append(ne)
+
+    events = []
+    for root, comp_nes in components.items():
+        # For each component, also include non-fiber NEs connected to this component
+        # that have alarms (derivative alarms etc.)
+        comp_set = set(comp_nes)
+        all_affected = list(comp_nes)
+        # Add NEs with derivative alarms that are neighbors of fiber NEs
+        for ne in comp_nes:
             for peer in ne_graph.get(ne, set()):
-                if peer not in fiber_nes and peer not in deriv_nes:
-                    cut_endpoint = ne
-                    healthy_endpoint = peer
-                    break
-            if cut_endpoint: break
+                if peer in tg_nes and peer not in comp_set:
+                    comp_set.add(peer)
+                    all_affected.append(peer)
 
-        if not cut_endpoint:
-            best = list(fiber_nes)[0]
-            best_conn = 999
-            for ne in fiber_nes:
-                conn = sum(1 for p in ne_graph.get(ne, set()) if p in fiber_nes)
-                if conn < best_conn:
-                    best_conn = conn
-                    best = ne
-            cut_endpoint = best
-            for peer in ne_graph.get(best, set()):
-                if peer not in fiber_nes:
-                    healthy_endpoint = peer
-                    break
-            if not healthy_endpoint:
-                healthy_endpoint = "对端"
-    else:
-        # Single-NE case: the alarmed NE is the cut point
-        cut_endpoint = list(fiber_nes)[0] if fiber_nes else list(tg_nes)[0]
-        # Try to find a neighbor in topology as healthy peer
+        # Find the cut segment: follow chain from one end to the other
+        # Build adjacency within component
+        comp_adj: dict[str, list[str]] = {}
+        for ne in all_affected:
+            comp_adj[ne] = [p for p in ne_graph.get(ne, set()) if p in comp_set]
+
+        # Find endpoints (nodes with 0 or 1 connections within component)
+        endpoints = [ne for ne in all_affected if len(comp_adj.get(ne, [])) <= 1]
+        if not endpoints:
+            endpoints = [all_affected[0]]
+
+        # BFS from first endpoint to build ordered chain
+        visited = set()
+        ordered = []
+        queue = [endpoints[0]]
+        while queue:
+            cur = queue.pop(0)
+            if cur in visited: continue
+            visited.add(cur)
+            ordered.append(cur)
+            for nb in comp_adj.get(cur, []):
+                if nb not in visited:
+                    queue.append(nb)
+        # Add unreachable NEs
+        for ne in all_affected:
+            if ne not in visited:
+                ordered.append(ne)
+
+        # Find cut_endpoint: the last NE in the chain; healthy_endpoint: its non-alarmed neighbor
+        cut_endpoint = ordered[-1] if ordered else (comp_nes[0] if comp_nes else "?")
+        healthy_endpoint = "对端"
         for peer in ne_graph.get(cut_endpoint, set()):
-            if peer not in tg_nes:
+            if peer not in comp_set:
                 healthy_endpoint = peer
                 break
-        if not healthy_endpoint:
-            healthy_endpoint = "邻站"
 
-    # BFS from cut point along alarmed NEs to build ordered chain
-    ordered_nes = []
-    visited = set()
-    queue = [cut_endpoint]
-    while queue:
-        cur = queue.pop(0)
-        if cur in visited: continue
-        visited.add(cur)
-        if cur in tg_nes: ordered_nes.append(cur)
-        for nb in ne_graph.get(cur, set()):
-            if nb in tg_nes and nb not in visited:
-                queue.append(nb)
+        segment = f"{cut_endpoint} 至 {healthy_endpoint}"
+        event_alarms = [a for a in tg if a.get("ne", "") in comp_set]
 
-    # If topology only found a few NEs but time group has many, include all alarmed NEs
-    if len(ordered_nes) < len(tg_nes) * 0.5:
-        all_affected = sorted(tg_nes)
-    else:
-        all_affected = ordered_nes if ordered_nes else sorted(tg_nes)
-    # Always include the healthy endpoint if it's a real NE (not placeholder)
-    if healthy_endpoint and healthy_endpoint not in ("对端", "邻站") and healthy_endpoint not in all_affected:
-        all_affected = list(all_affected) + [healthy_endpoint]
-    event_alarms = [a for a in tg if a.get("ne", "") in all_affected]
+        if len(event_alarms) < 2:
+            continue
 
-    if len(event_alarms) < 2:
-        return None
+        fiber_alarm_count = len([a for a in event_alarms if _is_fiber_alarm(a.get("name", ""))])
+        deriv_alarm_count = len([a for a in event_alarms if _is_derivative(a.get("name", ""))])
 
-    fiber_count = len([a for a in event_alarms if _is_fiber_alarm(a.get("name", ""))])
-    deriv_count = len([a for a in event_alarms if _is_derivative(a.get("name", ""))])
-    segment = f"{cut_endpoint or '?'} 至 {healthy_endpoint or '?'}"
+        if len(comp_nes) >= 2:
+            desc = f"拓扑链沿线 {len(comp_nes)} 站光纤告警（LOS/LOF等）"
+        else:
+            desc = f"{cut_endpoint} 光纤告警"
+        if deriv_alarm_count > 0:
+            desc += f"，伴随 {deriv_alarm_count} 条衍生告警（RDI/AIS/误码等）"
 
-    if len(fiber_nes) >= 2:
-        desc = f"拓扑链沿线 {len(fiber_nes)} 站光纤告警（LOS/LOF等）"
-    else:
-        desc = f"{cut_endpoint} 光纤告警"
-    if deriv_count > 0:
-        desc += f"，伴随 {deriv_count} 条衍生告警（RDI/AIS/误码等）"
+        tg_times = []
+        for a in tg:
+            t = parse_time(a.get("first_time", "") or a.get("time", ""))
+            if t: tg_times.append(t)
+        time_label = ""
+        if len(tg_times) >= 2:
+            time_label = f" [{min(tg_times).strftime('%m-%d %H:%M')} ~ {max(tg_times).strftime('%m-%d %H:%M')}]"
 
-    tg_times = []
-    for a in tg:
-        t = parse_time(a.get("first_time", "") or a.get("time", ""))
-        if t: tg_times.append(t)
-    time_label = ""
-    if len(tg_times) >= 2:
-        time_label = f" [{min(tg_times).strftime('%m-%d %H:%M')} ~ {max(tg_times).strftime('%m-%d %H:%M')}]"
+        fiber_ne_count = len(comp_nes)
+        events.append({
+            "fiber_ne_count": fiber_ne_count,
+            "title": f"光缆中断{time_label} — {segment}",
+            "description": desc,
+            "cut_segment": segment,
+            "affected_nes": ordered,
+            "affected_ne_count": len(comp_set),
+            "alarm_count": len(event_alarms),
+            "compression_ratio": f"{len(event_alarms)}:1",
+            "original_scenario": source_label,
+            "priority": "紧急" if fiber_ne_count >= 2 else "重要",
+            "event_alarms": event_alarms,
+        })
 
-    fiber_ne_count = len(fiber_nes)
-    priority = "紧急" if fiber_ne_count >= 2 else "重要"
-    return {
-        "fiber_ne_count": fiber_ne_count,
-        "title": f"光缆中断{time_label} — {segment}",
-        "description": desc,
-        "cut_segment": segment,
-        "affected_nes": all_affected,
-        "affected_ne_count": len(all_affected),
-        "alarm_count": len(event_alarms),
-        "compression_ratio": f"{len(event_alarms)}:1",
-        "original_scenario": source_label,
-        "priority": priority,
-        "event_alarms": event_alarms,
-    }
+    return events
 
 
 def detect_fiber_cuts_from_alarms(alarms: list[dict], ne_graph: dict[str, set[str]]) -> list[dict]:
-    """Detect fiber cuts from a flat list of alarms (not work orders)."""
-    # Filter to only alarms with parseable times
+    """Detect fiber cuts from a flat list of alarms using topology-chain aggregation."""
     timed_alarms = [a for a in alarms if parse_time(a.get("first_time", "") or a.get("time", ""))]
-    if len(timed_alarms) < 3:
+    if len(timed_alarms) < 2:
         return []
 
     windows = _split_into_time_windows(timed_alarms)
@@ -231,10 +257,10 @@ def detect_fiber_cuts_from_alarms(alarms: list[dict], ne_graph: dict[str, set[st
 
     events = []
     for w in windows:
-        event = _build_fiber_event(w, ne_graph)
-        if event:
-            events.append(event)
+        window_events = _build_fiber_events_from_window(w, ne_graph)
+        events.extend(window_events)
 
+    print(f"[fiber_cut] Total events: {len(events)}")
     return events
 
 
