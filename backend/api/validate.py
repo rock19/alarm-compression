@@ -63,12 +63,7 @@ async def match_realtime_alarms(req: MatchAlarmsRequest):
     if not req.alarms:
         return MatchAlarmsResponse(total_alarms=0)
 
-    deduped_alarms: dict[str, AlarmInput] = {}
-    for a in req.alarms:
-        key = f"{a.ne_name}|{a.alarm_name}"
-        if key not in deduped_alarms:
-            deduped_alarms[key] = a
-    alarms_list = list(deduped_alarms.values())
+    alarms_list = list(req.alarms)
 
     all_rules = result["round1"]["rules"] + result["round2"]["rules"]
     seen = {}
@@ -321,25 +316,6 @@ async def validate_alarms(file: UploadFile = File(...)):
 
     if not records:
         raise HTTPException(status_code=400, detail="文件中无有效告警记录")
-
-    # Dedup
-    dedup_key = lambda r: (
-        r.get("专业", ""), r.get("网管", ""), r.get("网元", ""),
-        r.get("告警对象", ""), r.get("告警名称", ""),
-        r.get("告警类型", ""), r.get("告警描述", ""),
-    )
-    original_count = len(records)
-    deduped: dict[tuple, dict] = {}
-    for r in records:
-        key = dedup_key(r)
-        if key not in deduped:
-            deduped[key] = r
-        else:
-            existing = deduped[key]
-            if r.get("发生时间") and (not existing.get("发生时间") or r["发生时间"] < existing["发生时间"]):
-                deduped[key] = r
-    records = list(deduped.values())
-    current_dedup_count = original_count - len(records)
 
     # Build per-NM rules and scenarios
     nm_rules: dict[str, list[dict]] = {}
@@ -677,7 +653,7 @@ async def validate_alarms(file: UploadFile = File(...)):
         unmatched_details=unmatched_details, work_orders=work_orders,
         coverage_rate=round(coverage * 100, 2) if records else 0,
         compression_rate=round((1 - (len(unmatched_details) + len(work_orders)) / len(records)) * 100, 1) if records else 0,
-        filtered_count=filtered_count, current_dedup_count=current_dedup_count,
+        filtered_count=filtered_count, current_dedup_count=0,
     )
     # Persist dispatch result for menu switching
     store.set_dispatch_result(resp.model_dump())
