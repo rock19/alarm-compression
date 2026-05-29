@@ -33,6 +33,8 @@ class UploadResponse(BaseModel):
     total_records: int
     raw_total: int = 0
     filtered_count: int = 0
+    dedup_removed: int = 0
+    file_stats: list[dict] = []
     unique_ne: int
     unique_alarm_names: int
     time_min: Optional[str] = None

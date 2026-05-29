@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import openpyxl
 from datetime import datetime
 from typing import Optional
@@ -195,22 +196,31 @@ def clean_continuous_alarms(records: list[dict]) -> list[dict]:
 def load_excel_multiple(file_paths: list[str]) -> tuple[list[dict], dict]:
     """
     Load and merge multiple alarm Excel files, clean duplicate continuous alarms.
-    Files are loaded individually, merged, sorted by 发生时间, then cleaned.
+    Returns per-file stats for progress display.
     """
     from datetime import datetime
 
+    file_stats = []
     all_records = []
-    for path in file_paths:
+    for fi, path in enumerate(file_paths):
+        fname = os.path.basename(path)
         records, _ = load_excel(path)
+        file_stats.append({"file": fname, "raw": len(records)})
         all_records.extend(records)
+        print(f"[data_loader] File {fi+1}/{len(file_paths)}: {fname} = {len(records)} raw records")
 
     raw_count = len(all_records)
+    print(f"[data_loader] Total raw: {raw_count}, deduplicating...")
     all_records.sort(key=lambda r: r.get("发生时间") or datetime.min)
     cleaned = clean_continuous_alarms(all_records)
+    removed = raw_count - len(cleaned)
+    print(f"[data_loader] After dedup: {len(cleaned)} records ({removed} removed, {round(removed/raw_count*100,1)}%)")
 
     meta = {
         "raw_total": raw_count,
         "total_records": len(cleaned),
+        "file_stats": file_stats,
+        "dedup_removed": removed,
         "unique_ne": len(set(r["网元"] for r in cleaned if r.get("网元"))),
         "unique_alarm_names": len(set(r["告警名称"] for r in cleaned if r.get("告警名称"))),
         "time_min": min((r["发生时间"] for r in cleaned if r.get("发生时间")), default=None),

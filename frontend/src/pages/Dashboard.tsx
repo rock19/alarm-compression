@@ -51,7 +51,7 @@ export default function Dashboard() {
       .finally(() => setInitialCheck(false));
   }, []);
 
-  const [uploadInfo, setUploadInfo] = useState<{ raw: number; filtered: number; total: number } | null>(null);
+  const [uploadInfo, setUploadInfo] = useState<{ raw: number; filtered: number; total: number; fileStats?: {file:string;raw:number}[] } | null>(null);
 
   const handleApiQuery = async () => {
     if (!queryStart || !queryEnd) { message.warning('请选择起止日期'); return; }
@@ -132,11 +132,19 @@ export default function Dashboard() {
       const result = await api.upload(files) as any;
       const s = await api.getStats() as StatsData;
       setStats(s);
-      if (result.raw_total) {
-        setUploadInfo({ raw: result.raw_total, filtered: result.filtered_count || 0, total: s.total_alarms });
-      }
-      const filterMsg = result.filtered_count ? `，过滤重复 ${result.filtered_count} 条` : '';
-      message.success(`已加载 ${s.total_alarms} 条告警记录${filterMsg}`);
+      const fileStats: any[] = result.file_stats || [];
+      const dedupRemoved = result.dedup_removed || result.filtered_count || 0;
+      setUploadInfo({
+        raw: result.raw_total || 0,
+        filtered: dedupRemoved,
+        total: s.total_alarms,
+        fileStats: fileStats,
+      });
+      const fileMsg = fileStats.length > 0
+        ? ` (${fileStats.map((f: any) => `${f.file}${f.raw}条`).join(', ')})`
+        : '';
+      const dedupPct = result.raw_total > 0 ? `，去重${Math.round(dedupRemoved/result.raw_total*100)}%` : '';
+      message.success(`已加载 ${s.total_alarms} 条${fileMsg}${dedupPct}`, 5);
     } catch (e: any) {
       message.error(e.message);
     }
@@ -189,7 +197,7 @@ export default function Dashboard() {
         <Row align="middle" gutter={16}>
           <Col flex="auto">
             {stats
-              ? <span>导入 <b>{uploadInfo?.raw || stats.total_alarms}</b> 条，过滤重复 <b>{uploadInfo?.filtered || 0}</b> 条，保留 <b>{stats.total_alarms}</b> 条 | <b>{stats.total_nes}</b> 个网元，<b>{stats.total_alarm_types}</b> 种类型</span>
+              ? <span>导入 <b>{uploadInfo?.raw || stats.total_alarms}</b> 条，去重 <b>{uploadInfo?.filtered || 0}</b> 条，保留 <b>{stats.total_alarms}</b> 条{uploadInfo?.fileStats && uploadInfo.fileStats.length > 0 && <span style={{fontSize:11,color:'#999'}}>（{uploadInfo.fileStats.map(f => `${f.file}:${f.raw}条`).join('；')}）</span>} | <b>{stats.total_nes}</b> 个网元，<b>{stats.total_alarm_types}</b> 种类型</span>
               : <span style={{ color: '#999' }}>暂无数据，请上传历史告警 Excel 文件</span>
             }
           </Col>
