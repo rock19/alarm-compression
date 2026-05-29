@@ -100,6 +100,9 @@ async def run_fpgrowth_endpoint(req: FPGrowthRequest):
     if not results:
         raise HTTPException(status_code=400, detail="所有网管数据均不足以挖掘，请检查数据或调整参数")
 
+    # Invalidate diagnostic tree cache — will be rebuilt on next request
+    store.set_diagnostic_trees([])
+
     # Return first result's structure for backward compat
     first = next(iter(results.values())) if results else {"round1": {"rules": []}, "round2": {"rules": []}}
     return FPGrowthResponse(
