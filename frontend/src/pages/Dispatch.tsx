@@ -203,14 +203,16 @@ function GuidanceButton({ wo }: { wo: any }) {
 
 export default function Dispatch() {
   const [valResult, setValResult] = useState<ValidateResult | null>(null);
+  const [cacheLoading, setCacheLoading] = useState(false);
 
   // Auto-load cached dispatch result on mount
   useEffect(() => {
+    setCacheLoading(true);
     api.dispatchCached().then((r: any) => {
       if (r && r.work_orders?.length > 0) {
         setValResult(r);
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setCacheLoading(false));
   }, []);
   const [loading, setLoading] = useState(false);
   const [apiCurLoading, setApiCurLoading] = useState(false);
@@ -381,7 +383,7 @@ export default function Dispatch() {
             </Row>
           )}
 
-      {loading && <Spin style={{ display: 'block', marginTop: 40 }} />}
+      {(loading || cacheLoading) && <Spin tip={cacheLoading ? '加载本地数据...' : undefined} style={{ display: 'block', marginTop: 40 }} />}
 
       {valResult && (
         <>
