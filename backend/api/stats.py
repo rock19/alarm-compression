@@ -12,6 +12,11 @@ router = APIRouter()
 
 @router.get("/stats", response_model=StatsResponse)
 async def get_stats():
+    # Return cached stats if available (invalidated on set_alarms)
+    cached = store.get_cached_stats()
+    if cached:
+        return cached
+
     alarms = store.get_alarms()
     meta = store.get_meta()
 
@@ -56,7 +61,7 @@ async def get_stats():
     meta_nms = meta.get("network_managers", [])
     all_nms = sorted(set(nm_with_results) | set(meta_nms))
 
-    return StatsResponse(
+    result = StatsResponse(
         network_managers=all_nms,
         total_alarms=meta["total_records"],
         total_nes=meta["unique_ne"],
@@ -70,6 +75,8 @@ async def get_stats():
         time_series=time_series,
         alarm_time_series=alarm_time_series,
     )
+    store.set_cached_stats(result.model_dump())
+    return result
 
 
 @router.get("/export-alarms")

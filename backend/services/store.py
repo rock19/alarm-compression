@@ -41,10 +41,18 @@ class Store:
         self._alarms = alarms
         self._meta = meta
         self._uploaded_at = datetime.now()
+        self._stats_cache = None  # Invalidate stats cache
         self._save()
 
     def get_alarms(self) -> list[dict]:
         return self._alarms
+
+    def get_cached_stats(self) -> Optional[dict]:
+        """Get cached stats, or None if invalidated."""
+        return getattr(self, "_stats_cache", None)
+
+    def set_cached_stats(self, stats: dict):
+        self._stats_cache = stats
 
     # ── Simulation data (Dispatch/FiberCut) — separate file from main data ──
 
