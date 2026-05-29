@@ -102,9 +102,11 @@ function FiberCutGuidanceButton({ ev }: { ev: any }) {
               method: 'POST', headers: {'Content-Type': 'application/json'},
               body: JSON.stringify({ title: ev.title, cut_segment: ev.cut_segment,
                 affected_nes: ev.affected_nes, alarm_count: ev.alarm_count,
-                sample_alarms: (ev.event_alarms || []).slice(0, 10).map((a: any) => ({
+                sample_alarms: (ev.event_alarms || []).slice(0, 200).map((a: any) => ({
                   ne: a.ne, name: a.name, severity: a.severity, first_time: a.first_time,
                 })),
+                topology_path: ev.topology_path || [],
+                link_details: (ev.link_details || []).slice(0, 20),
               }),
             }).then(r => r.json());
             setGuidance(r.guidance);

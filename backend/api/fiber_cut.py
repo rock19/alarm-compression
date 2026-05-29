@@ -374,13 +374,41 @@ class FiberCutGuidanceRequest(BaseModel):
     affected_nes: list[str] = []
     alarm_count: int = 0
     sample_alarms: list[dict] = []
+    topology_path: list[str] = []
+    link_details: list[dict] = []
 
 
 @router.post("/fiber-cut-guidance")
 async def fiber_cut_guidance(req: FiberCutGuidanceRequest):
+    # Build alarm detail text
+    ne_alarm_map: dict[str, list[str]] = {}
+    for a in req.sample_alarms:
+        ne = a.get('ne', '')
+        name = a.get('name', '')
+        sev = a.get('severity', '')
+        t = (a.get('first_time', '') or '').replace('T', ' ')
+        if ne not in ne_alarm_map:
+            ne_alarm_map[ne] = []
+        ne_alarm_map[ne].append(f"{name}[{sev}] {t}")
+
     alarms_text = ""
-    for a in req.sample_alarms[:10]:
-        alarms_text += f"- {a.get('ne','')}: {a.get('name','')} [{a.get('severity','')}] {a.get('first_time','')}\n"
+    for ne, alarms in list(ne_alarm_map.items())[:20]:
+        alarms_text += f"\n  {ne}（{len(alarms)}条）:"
+        for a in alarms[:3]:
+            alarms_text += f"\n    - {a}"
+
+    # Build topology text
+    topo_text = ""
+    if req.topology_path:
+        topo_text = "\n".join(f"  {p}" for p in req.topology_path[:20])
+        if len(req.topology_path) > 20:
+            topo_text += f"\n  ...共{len(req.topology_path)}跳"
+
+    # Build link detail text
+    link_text = ""
+    if req.link_details:
+        for l in req.link_details[:10]:
+            link_text += f"\n  {l.get('source','')}:{l.get('source_port','')} ↔ {l.get('target','')}:{l.get('target_port','')}"
 
     prompt = f"""你是铁路通信光缆运维专家。检测到以下光缆中断事件，请给出根因分析和处理建议。
 
@@ -388,16 +416,21 @@ async def fiber_cut_guidance(req: FiberCutGuidanceRequest):
 - 事件: {req.title}
 - 断点位置: {req.cut_segment}
 - 受影响站点数: {len(req.affected_nes)}
-- 受影响站点: {', '.join(req.affected_nes[:10])}
-- 告警数量: {req.alarm_count}
+- 告警总数: {req.alarm_count}
 
-【告警样本】
+【告警明细（按网元分组）】
 {alarms_text}
 
-请从以下角度分析（200字以内）：
-1. 可能的根因: 光缆中断最可能的原因
+【拓扑连接关系】
+{topo_text if topo_text else '无拓扑数据'}
+
+【链路端口数据】
+{link_text if link_text else '无链路端口数据'}
+
+请从以下角度分析（300字以内）：
+1. 可能的根因: 根据告警类型、拓扑关系和端口数据推断最可能的原因
 2. 建议处理步骤: 3-5步实操建议
-3. 影响范围评估: 是否影响行车业务"""
+3. 影响范围评估: 是否影响行车业务，涉及哪些关键站点"""
 
     api_key = os.environ.get("ANTHROPIC_AUTH_TOKEN")
     if not api_key:
@@ -412,7 +445,7 @@ async def fiber_cut_guidance(req: FiberCutGuidanceRequest):
 
         client = Anthropic(api_key=api_key, base_url=base_url)
         message = client.messages.create(
-            model=model, max_tokens=500,
+            model=model, max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
             thinking={"type": "disabled"},
         )
