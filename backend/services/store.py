@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 
 DATA_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "alarm_data.json")
+SIM_DATA_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "sim_data.json")
 
 
 def _serialize_datetime(obj):
@@ -32,6 +33,7 @@ class Store:
         self._fiber_events: list[dict] = []
         self._uploaded_at: Optional[datetime] = None
         self._load()
+        self._load_sim()
 
     # ── Alarms (historical, for FP-Growth) ──
 
@@ -44,13 +46,56 @@ class Store:
     def get_alarms(self) -> list[dict]:
         return self._alarms
 
-    # ── Simulation alarms (Dispatch/FiberCut, temporary, does NOT persist) ──
+    # ── Simulation data (Dispatch/FiberCut) — separate file from main data ──
 
     def set_sim_alarms(self, alarms: list[dict]):
         self._sim_alarms = alarms
+        self._save_sim()
 
     def get_sim_alarms(self) -> list[dict]:
-        return getattr(self, "_sim_alarms", [])
+        if not hasattr(self, "_sim_alarms"):
+            self._sim_alarms = []
+        return self._sim_alarms
+
+    def set_sim_dispatch_result(self, result: dict):
+        self._sim_dispatch_result = result
+        self._save_sim()
+
+    def get_sim_dispatch_result(self) -> Optional[dict]:
+        return getattr(self, "_sim_dispatch_result", None)
+
+    def set_sim_fiber_events(self, events: list[dict]):
+        self._sim_fiber_events = events
+        self._save_sim()
+
+    def get_sim_fiber_events(self) -> list[dict]:
+        return getattr(self, "_sim_fiber_events", [])
+
+    def _save_sim(self):
+        """Persist simulation data to separate file."""
+        try:
+            data = {
+                "alarms": getattr(self, "_sim_alarms", []),
+                "dispatch_result": getattr(self, "_sim_dispatch_result", None),
+                "fiber_events": getattr(self, "_sim_fiber_events", []),
+            }
+            with open(SIM_DATA_FILE, "w") as f:
+                json.dump(data, f, default=_serialize_datetime, ensure_ascii=False, indent=2)
+        except Exception as e:
+            print(f"[store] Failed to save sim data: {e}")
+
+    def _load_sim(self):
+        """Load persisted simulation data on startup."""
+        try:
+            if os.path.exists(SIM_DATA_FILE):
+                with open(SIM_DATA_FILE, "r") as f:
+                    data = json.load(f, object_hook=_deserialize_datetime)
+                self._sim_alarms = data.get("alarms", [])
+                self._sim_dispatch_result = data.get("dispatch_result")
+                self._sim_fiber_events = data.get("fiber_events", [])
+                print(f"[store] Loaded sim: {len(self._sim_alarms)} alarms, {len(self._sim_fiber_events)} fiber events")
+        except Exception as e:
+            print(f"[store] Failed to load sim data: {e}")
 
     def get_meta(self) -> dict:
         return self._meta

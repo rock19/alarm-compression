@@ -340,7 +340,7 @@ def _normalize_alarm(a: dict) -> dict:
 @router.get("/fiber-cut-cached")
 async def get_cached_fiber_events():
     """Get cached fiber cut events (for menu switching persistence)."""
-    events = store.get_fiber_events()
+    events = store.get_sim_fiber_events() or store.get_fiber_events()
     total = sum(e.get("alarm_count", 0) for e in events)
     return {"events": events, "total_alarms_covered": total,
             "total_compression": f"{total}:{len(events)}" if events else "N/A",
@@ -363,7 +363,7 @@ async def detect_fiber_cuts_from_store():
     total_compression = f"{total_alarms}:{len(events)}" if events else "N/A"
     fiber_alarm_count = sum(1 for a in normalized if _is_fiber_alarm(a["name"]))
 
-    store.set_fiber_events(events)
+    store.set_sim_fiber_events(events)
     return FiberCutResponse(
         events=events,
         total_alarms_covered=total_alarms,

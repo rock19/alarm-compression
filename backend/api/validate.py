@@ -288,7 +288,7 @@ async def validate_store():
 @router.get("/dispatch-cached")
 async def get_cached_dispatch():
     """Get cached dispatch result (for menu switching persistence)."""
-    cached = store.get_dispatch_result()
+    cached = store.get_sim_dispatch_result() or store.get_dispatch_result()
     if cached:
         return cached
     return {"work_orders": [], "total_alarms": 0, "message": "无缓存数据，请先导入模拟数据"}
@@ -655,6 +655,6 @@ async def validate_alarms(file: UploadFile = File(...)):
         compression_rate=round((1 - (len(unmatched_details) + len(work_orders)) / len(records)) * 100, 1) if records else 0,
         filtered_count=filtered_count, current_dedup_count=0,
     )
-    # Persist dispatch result for menu switching
-    store.set_dispatch_result(resp.model_dump())
+    # Persist dispatch result to sim store (separate from main data)
+    store.set_sim_dispatch_result(resp.model_dump())
     return resp
