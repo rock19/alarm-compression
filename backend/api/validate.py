@@ -255,34 +255,36 @@ async def validate_store():
     alarms = store.get_alarms()
     if not alarms:
         raise HTTPException(status_code=400, detail="告警概览中无数据，请先导入告警")
-    # Reuse the file upload validation logic by writing alarms to a temp file
-    import tempfile
-    import openpyxl
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            headers = ["专业","网管","网元","告警对象","告警级别","告警名称","告警类型","告警描述",
-                       "发生时间","恢复时间","恢复状态","关联业务","组织机构","确认状态","确认时间",
-                       "确认人","告警有效性","无效原因","业务使用单位","标记人","标记时间","障碍诊断",
-                       "告警分析","告警编码","子系统确认状态","子系统确认时间","清除时间","清除人",
-                       "铁路线","站点","机房","厂商","告警标识"]
-            for c, h in enumerate(headers, 1):
-                ws.cell(row=1, column=c, value=h)
-            for ri, a in enumerate(alarms, 2):
-                for ci, h in enumerate(headers, 1):
-                    val = a.get(h, "")
-                    if hasattr(val, 'isoformat'):
-                        val = val.isoformat()
-                    ws.cell(row=ri, column=ci, value=val)
-            wb.save(tmp.name)
-            tmp_path = tmp.name
-        return await validate_alarms(UploadFile(filename="store_data.xlsx", file=open(tmp_path, "rb")))
-    finally:
-        if tmp_path:
-            try: os.unlink(tmp_path)
-            except: pass
+    # Build records in the format expected by validate logic (bypass Excel row limit)
+    records = []
+    for a in alarms:
+        t = a.get("发生时间")
+        records.append({
+            "专业": a.get("专业", ""), "网管": a.get("网管", ""),
+            "网元": a.get("网元", ""), "告警对象": a.get("告警对象", ""),
+            "告警级别": a.get("告警级别", ""), "告警名称": a.get("告警名称", ""),
+            "告警类型": a.get("告警类型", ""), "告警描述": a.get("告警描述", ""),
+            "发生时间": t, "恢复时间": a.get("恢复时间"),
+            "恢复状态": a.get("恢复状态", ""), "关联业务": a.get("关联业务", ""),
+            "组织机构": a.get("组织机构", ""), "确认状态": a.get("确认状态", ""),
+            "确认时间": a.get("确认时间", ""), "确认人": a.get("确认人", ""),
+            "告警有效性": a.get("告警有效性", ""), "无效原因": a.get("无效原因", ""),
+            "业务使用单位": a.get("业务使用单位", ""), "标记人": a.get("标记人", ""),
+            "标记时间": a.get("标记时间", ""), "障碍诊断": a.get("障碍诊断", ""),
+            "告警分析": a.get("告警分析", ""), "告警编码": a.get("告警编码", ""),
+            "子系统确认状态": a.get("子系统确认状态", ""), "子系统确认时间": a.get("子系统确认时间", ""),
+            "清除时间": a.get("清除时间", ""), "清除人": a.get("清除人", ""),
+            "铁路线": a.get("铁路线", ""), "站点": a.get("站点", ""),
+            "机房": a.get("机房", ""), "厂商": a.get("厂商", ""),
+            "告警标识": a.get("告警标识", ""),
+        })
+    return await _validate_records(records)
+
+
+async def _validate_records(records: list[dict]):
+    """Core validation logic shared by file upload and direct store validation."""
+    if not records:
+        raise HTTPException(status_code=400, detail="无有效告警记录")
 
 
 @router.get("/dispatch-cached")
@@ -303,7 +305,7 @@ async def validate_alarms(file: UploadFile = File(...)):
     if not store.get_network_managers():
         raise HTTPException(status_code=400, detail="请先运行FP-Growth计算")
 
-    # Load validation data
+    # Load validation data from Excel
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
             content = await file.read()
@@ -314,8 +316,13 @@ async def validate_alarms(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"文件处理失败: {str(e)}")
 
+    return await _validate_records(records)
+
+
+async def _validate_records(records: list[dict]):
+    """Core validation logic: match records against FP-Growth rules."""
     if not records:
-        raise HTTPException(status_code=400, detail="文件中无有效告警记录")
+        raise HTTPException(status_code=400, detail="无有效告警记录")
 
     # Build per-NM rules and scenarios
     nm_rules: dict[str, list[dict]] = {}
