@@ -20,28 +20,16 @@ export default function FiberCutPage() {
 
   const [cacheLoading, setCacheLoading] = useState(false);
 
-  // Auto-load cached fiber events on mount (fast), then fall back to detect
+  // Auto-load cached fiber events on mount (instant from sim_data.json)
   useEffect(() => {
     (async () => {
       setCacheLoading(true);
       try {
-        // Try cache first (instant if persisted)
         const cached = await api.fiberCutCached() as any;
         if (cached?.events?.length) {
           setFiberEvents(cached.events);
           try { const vr = await api.validateStore() as any; setResult(vr); }
-          catch { setResult({ total_alarms: cached.total_alarms_scanned || 0 }); }
-          setCacheLoading(false);
-          return;
-        }
-      } catch {}
-      // Fall back to full detection
-      try {
-        const fc = await api.fiberCutDetect() as any;
-        if (fc.events?.length) {
-          setFiberEvents(fc.events);
-          try { const vr = await api.validateStore() as any; setResult(vr); }
-          catch { setResult({ total_alarms: fc.total_alarms_scanned || 0 }); }
+          catch { setResult({ total_alarms: 0 }); }
         }
       } catch {}
       setCacheLoading(false);
