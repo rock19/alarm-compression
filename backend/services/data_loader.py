@@ -210,23 +210,20 @@ def load_excel_multiple(file_paths: list[str]) -> tuple[list[dict], dict]:
         print(f"[data_loader] File {fi+1}/{len(file_paths)}: {fname} = {len(records)} raw records")
 
     raw_count = len(all_records)
-    print(f"[data_loader] Total raw: {raw_count}, deduplicating...")
+    print(f"[data_loader] Total raw: {raw_count} records (no dedup)")
     all_records.sort(key=lambda r: r.get("发生时间") or datetime.min)
-    cleaned = clean_continuous_alarms(all_records)
-    removed = raw_count - len(cleaned)
-    print(f"[data_loader] After dedup: {len(cleaned)} records ({removed} removed, {round(removed/raw_count*100,1)}%)")
 
     meta = {
         "raw_total": raw_count,
-        "total_records": len(cleaned),
+        "total_records": raw_count,
         "file_stats": file_stats,
-        "dedup_removed": removed,
-        "unique_ne": len(set(r["网元"] for r in cleaned if r.get("网元"))),
-        "unique_alarm_names": len(set(r["告警名称"] for r in cleaned if r.get("告警名称"))),
-        "time_min": min((r["发生时间"] for r in cleaned if r.get("发生时间")), default=None),
-        "time_max": max((r["发生时间"] for r in cleaned if r.get("发生时间")), default=None),
-        "railway_lines": list(set(r.get("铁路线", "") for r in cleaned if r.get("铁路线"))),
-        "network_managers": list(set(r.get("网管", "") for r in cleaned if r.get("网管"))),
-        "severity_levels": list(set(r.get("告警级别", "") for r in cleaned if r.get("告警级别"))),
+        "dedup_removed": 0,
+        "unique_ne": len(set(r["网元"] for r in all_records if r.get("网元"))),
+        "unique_alarm_names": len(set(r["告警名称"] for r in all_records if r.get("告警名称"))),
+        "time_min": min((r["发生时间"] for r in all_records if r.get("发生时间")), default=None),
+        "time_max": max((r["发生时间"] for r in all_records if r.get("发生时间")), default=None),
+        "railway_lines": list(set(r.get("铁路线", "") for r in all_records if r.get("铁路线"))),
+        "network_managers": list(set(r.get("网管", "") for r in all_records if r.get("网管"))),
+        "severity_levels": list(set(r.get("告警级别", "") for r in all_records if r.get("告警级别"))),
     }
-    return cleaned, meta
+    return all_records, meta
