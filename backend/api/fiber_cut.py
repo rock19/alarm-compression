@@ -202,8 +202,10 @@ def _build_fiber_event(tg: list[dict], ne_graph: dict[str, set[str]],
     if len(tg_times) >= 2:
         time_label = f" [{min(tg_times).strftime('%m-%d %H:%M')} ~ {max(tg_times).strftime('%m-%d %H:%M')}]"
 
-    priority = "紧急" if len(fiber_nes) >= 2 else "重要"
+    fiber_ne_count = len(fiber_nes)
+    priority = "紧急" if fiber_ne_count >= 2 else "重要"
     return {
+        "fiber_ne_count": fiber_ne_count,
         "title": f"光缆中断{time_label} — {segment}",
         "description": desc,
         "cut_segment": segment,
