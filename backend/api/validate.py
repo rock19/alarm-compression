@@ -252,9 +252,10 @@ class ValidateResponse(BaseModel):
 @router.post("/validate-store", response_model=ValidateResponse)
 async def validate_store():
     """Validate current store alarms against existing rules (no file upload needed)."""
-    alarms = store.get_alarms()
+    # Use simulation alarms if available, otherwise fall back to main store
+    alarms = store.get_sim_alarms() or store.get_alarms()
     if not alarms:
-        raise HTTPException(status_code=400, detail="告警概览中无数据，请先导入告警")
+        raise HTTPException(status_code=400, detail="请先导入告警数据")
     # Build records in the format expected by validate logic (bypass Excel row limit)
     records = []
     for a in alarms:
