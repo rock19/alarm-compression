@@ -111,7 +111,32 @@ def _build_scenario(rules: list[dict]) -> dict | None:
 
     avg_lift = sum(r.get("lift", 0) or 0 for r in rules) / len(rules) if rules else 0
 
+    # Classify scenario category from alarm name
+    CAT_RULES = [
+        ("物理光口故障", ["LOS", "信号丢失", "光物理", "光口", "光模块"]),
+        ("SDH远端缺陷", ["RDI", "远端接收失效", "远端缺陷"]),
+        ("帧同步异常", ["LOF", "帧丢失", "帧失步", "OOF"]),
+        ("LCAS虚级联故障", ["LCAS", "虚级联", "VCAT", "VCG"]),
+        ("时钟同步异常", ["时钟", "SYNC", "定时"]),
+        ("2M/PDH线路故障", ["2M", "PDH", "E1", "AIS", "T_ALOS"]),
+        ("以太网端口故障", ["以太", "ETH", "网口"]),
+        ("通道层故障", ["VC12", "VC4", "VC3", "TU", "AU4", "指针", "踪迹", "UNEQ", "SLM"]),
+        ("复用段故障", ["复用段", "MS_", "MS ", "B2"]),
+        ("再生段故障", ["再生段", "RS_", "RS ", "B1"]),
+        ("性能越限", ["越限", "误码", "PM", "UAS", "ES", "SES", "BBE"]),
+        ("OPU/客户侧故障", ["OPU", "客户信号", "ODU"]),
+    ]
+    category = "其他故障"
+    for cat_name, keywords in CAT_RULES:
+        for kw in keywords:
+            if kw in convergence:
+                category = cat_name
+                break
+        if category != "其他故障":
+            break
+
     return {
+        "category": category,
         "scenario_name": convergence,
         "convergence_alarm": convergence,
         "root": root_node,
