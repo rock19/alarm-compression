@@ -175,6 +175,9 @@ def _build_fiber_event(tg: list[dict], ne_graph: dict[str, set[str]],
         all_affected = sorted(tg_nes)
     else:
         all_affected = ordered_nes if ordered_nes else sorted(tg_nes)
+    # Always include the healthy endpoint if it's a real NE (not placeholder)
+    if healthy_endpoint and healthy_endpoint not in ("对端", "邻站") and healthy_endpoint not in all_affected:
+        all_affected = list(all_affected) + [healthy_endpoint]
     event_alarms = [a for a in tg if a.get("ne", "") in all_affected]
 
     if len(event_alarms) < 2:
