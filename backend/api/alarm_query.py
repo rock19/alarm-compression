@@ -43,6 +43,7 @@ def _run_query_alarms(
     task_id: str,
     start_date: str, end_date: str,
     spec_id: str, ems_ids: str,
+    sim: bool = False,
 ):
     """Background task: query alarms from all EMS and store results (synchronous)."""
     import time as time_mod
@@ -198,7 +199,10 @@ def _run_query_alarms(
             "network_managers": list(set(r["网管"] for r in records if r.get("网管"))),
             "severity_levels": list(set(r["告警级别"] for r in records if r.get("告警级别"))),
         }
-        store.set_alarms(records, meta)
+        if sim:
+            store.set_sim_alarms(records)
+        else:
+            store.set_alarms(records, meta)
         _update_progress(task_id, 100, "done", loaded=len(records), total=total,
             meta={"unique_ne": meta["unique_ne"], "unique_alarm_names": meta["unique_alarm_names"],
                   "time_min": meta["time_min"].isoformat() if meta["time_min"] else None,
@@ -219,12 +223,13 @@ async def query_alarms(
     end_date: str = Query(..., description="结束日期 YYYY-MM-DD（必填）"),
     spec_id: str = Query("3", description="专业ID（3=传输系统,4=GSM-R等）"),
     ems_ids: str = Query("", description="网管主键，多个英文逗号分隔，留空则自动获取全部"),
+    sim: bool = Query(False, description="模拟模式，不覆盖历史数据"),
 ):
     """Start alarm query in background. Returns task_id immediately."""
     import threading
     task_id = _init_task("正在获取网管列表...")
     print(f"[alarm_query] Starting background thread for task {task_id}", flush=True)
-    t = threading.Thread(target=_run_query_alarms, args=(task_id, start_date, end_date, spec_id, ems_ids), daemon=True)
+    t = threading.Thread(target=_run_query_alarms, args=(task_id, start_date, end_date, spec_id, ems_ids, sim), daemon=True)
     t.start()
     return AlarmQueryResponse(task_id=task_id, loaded=0)
 
@@ -249,6 +254,7 @@ async def get_ems_list():
 async def import_current_alarms(
     ems_ids: str = Query("", description="网管主键，多个英文逗号分隔，留空则自动获取全部"),
     spec_id: str = Query("", description="专业ID筛选（3=传输系统等），留空不过滤"),
+    sim: bool = Query(False, description="模拟模式，不覆盖历史数据"),
 ):
     """Import current/realtime alarms via API."""
     if not ems_ids:
@@ -291,7 +297,10 @@ async def import_current_alarms(
         "network_managers": list(set(r["网管"] for r in records if r.get("网管"))),
         "severity_levels": list(set(r["告警级别"] for r in records if r.get("告警级别"))),
     }
-    store.set_alarms(records, meta)
+    if sim:
+        store.set_sim_alarms(records)
+    else:
+        store.set_alarms(records, meta)
 
     return {"loaded": len(records), "total_ems": len(ems_ids.split(",")),
             "unique_ne": meta["unique_ne"], "unique_alarm_names": meta["unique_alarm_names"]}

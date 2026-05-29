@@ -350,7 +350,8 @@ async def get_cached_fiber_events():
 @router.post("/fiber-cut-detect", response_model=FiberCutResponse)
 async def detect_fiber_cuts_from_store():
     """Detect fiber cuts directly from store alarms (no FP-Growth dependency)."""
-    alarms = store.get_alarms()
+    # Use simulation alarms if available, otherwise fall back to main store
+    alarms = store.get_sim_alarms() or store.get_alarms()
     if not alarms:
         return FiberCutResponse()
 

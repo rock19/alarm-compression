@@ -297,7 +297,7 @@ export default function Dispatch() {
                 onClick={async () => { setApiCurLoading(true); setValResult(null);
                   setApiCurProgress({ progress: 10, status: '查询中...', loaded: 0 });
                   try {
-                    const r = await fetch(`http://localhost:8000/api/import-current-alarms?spec_id=${querySpec}`, { method: 'POST' }).then(r => r.json());
+                    const r = await fetch(`http://localhost:8000/api/import-current-alarms?spec_id=${querySpec}&sim=1`, { method: 'POST' }).then(r => r.json());
                     if (r.error) { message.error(r.error); setApiCurLoading(false); return; }
                     setApiCurProgress({ progress: 70, status: '派单分析中...', loaded: r.loaded });
                     const vr = await api.validateStore() as any; setValResult(vr); setApiCurLoading(false);
@@ -324,7 +324,7 @@ export default function Dispatch() {
                   setApiHistLoading(true); setValResult(null);
                   setApiHistProgress({ progress: 5, status: '查询中...', loaded: 0, page: 0, total_pages: 0 });
                   try {
-                    const r = await fetch(`http://localhost:8000/api/query-alarms?start_date=${queryStart}&end_date=${queryEnd}&spec_id=${querySpec}`, { method: 'POST' }).then(r => r.json());
+                    const r = await fetch(`http://localhost:8000/api/query-alarms?start_date=${queryStart}&end_date=${queryEnd}&spec_id=${querySpec}&sim=1`, { method: 'POST' }).then(r => r.json());
                     if (r.error) { message.error(r.error); setApiHistLoading(false); return; }
                     if (r.task_id) {
                       trackHistTask(r.task_id);

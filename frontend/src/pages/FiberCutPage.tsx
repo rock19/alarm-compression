@@ -52,16 +52,14 @@ export default function FiberCutPage() {
     setLoading(true); setResult(null); setFiberEvents([]);
     try {
       if (type === 'file' && file) {
-        // Upload to store first
-        await api.upload([file]);
-        // Detect fiber cuts from stored alarms
-        const fc = await api.fiberCutDetect() as any;
+        // Validate file without storing (simulation only)
+        const vr = await api.validateAlarms(file) as any;
+        setResult(vr);
+        // Run fiber cut detection on the validated work orders
+        const fc = await api.analyzeFiberCuts(vr.work_orders || []) as any;
         setFiberEvents(fc.events || []);
-        // Get validation stats (may fail if no FP-Growth, that's ok for fiber detection)
-        try { const vr = await api.validateStore() as any; setResult(vr); }
-        catch { setResult({ total_alarms: fc.total_alarms_scanned || 0 }); }
       } else if (type === 'api-cur') {
-        const r = await fetch(`http://localhost:8000/api/import-current-alarms?spec_id=${querySpec}`, { method: 'POST' }).then(r => r.json());
+        const r = await fetch(`http://localhost:8000/api/import-current-alarms?spec_id=${querySpec}&sim=1`, { method: 'POST' }).then(r => r.json());
         if (r.error) { message.error(r.error); setLoading(false); return; }
         const fc = await api.fiberCutDetect() as any;
         setFiberEvents(fc.events || []);
@@ -71,7 +69,7 @@ export default function FiberCutPage() {
       } else if (type === 'api-hist') {
         if (!queryStart || !queryEnd) { message.warning('请选择日期'); setLoading(false); return; }
         setApiLoading(true);
-        const r = await fetch(`http://localhost:8000/api/query-alarms?start_date=${queryStart}&end_date=${queryEnd}&spec_id=${querySpec}`, { method: 'POST' }).then(r => r.json());
+        const r = await fetch(`http://localhost:8000/api/query-alarms?start_date=${queryStart}&end_date=${queryEnd}&spec_id=${querySpec}&sim=1`, { method: 'POST' }).then(r => r.json());
         if (r.error) { message.error(r.error); setLoading(false); setApiLoading(false); return; }
         if (r.task_id) {
           trackTask(r.task_id);

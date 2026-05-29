@@ -33,7 +33,7 @@ class Store:
         self._uploaded_at: Optional[datetime] = None
         self._load()
 
-    # ── Alarms ──
+    # ── Alarms (historical, for FP-Growth) ──
 
     def set_alarms(self, alarms: list[dict], meta: dict):
         self._alarms = alarms
@@ -43,6 +43,14 @@ class Store:
 
     def get_alarms(self) -> list[dict]:
         return self._alarms
+
+    # ── Simulation alarms (Dispatch/FiberCut, temporary, does NOT persist) ──
+
+    def set_sim_alarms(self, alarms: list[dict]):
+        self._sim_alarms = alarms
+
+    def get_sim_alarms(self) -> list[dict]:
+        return getattr(self, "_sim_alarms", [])
 
     def get_meta(self) -> dict:
         return self._meta
