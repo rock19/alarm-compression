@@ -18,9 +18,24 @@ export default function FiberCutPage() {
 
   const { prog: queryProg, trackTask } = useTaskProgress();
 
-  // Auto-load fiber events from store on mount
+  const [cacheLoading, setCacheLoading] = useState(false);
+
+  // Auto-load cached fiber events on mount (fast), then fall back to detect
   useEffect(() => {
     (async () => {
+      setCacheLoading(true);
+      try {
+        // Try cache first (instant if persisted)
+        const cached = await api.fiberCutCached() as any;
+        if (cached?.events?.length) {
+          setFiberEvents(cached.events);
+          try { const vr = await api.validateStore() as any; setResult(vr); }
+          catch { setResult({ total_alarms: cached.total_alarms_scanned || 0 }); }
+          setCacheLoading(false);
+          return;
+        }
+      } catch {}
+      // Fall back to full detection
       try {
         const fc = await api.fiberCutDetect() as any;
         if (fc.events?.length) {
@@ -29,6 +44,7 @@ export default function FiberCutPage() {
           catch { setResult({ total_alarms: fc.total_alarms_scanned || 0 }); }
         }
       } catch {}
+      setCacheLoading(false);
     })();
   }, []);
 
@@ -152,7 +168,7 @@ export default function FiberCutPage() {
         </Col>
       </Row>
 
-      {loading && <Spin style={{ display: 'block', marginTop: 40 }} />}
+      {(loading || cacheLoading) && <Spin tip={cacheLoading ? '加载本地数据...' : undefined} style={{ display: 'block', marginTop: 40 }} />}
 
       {apiLoading && (
         <Row style={{ marginBottom: 16 }}>
