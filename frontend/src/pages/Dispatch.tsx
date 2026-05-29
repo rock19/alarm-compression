@@ -34,89 +34,6 @@ interface ValidateResult {
   compression_rate?: number;
 }
 
-function FiberCutAnalysis({ workOrders }: { workOrders: any[] }) {
-  const [events, setEvents] = useState<any[] | null>(null);
-  useEffect(() => {
-    if (workOrders.length === 0) return;
-    api.analyzeFiberCuts(workOrders).then((r: any) => {
-      if (r.events?.length > 0) setEvents(r.events);
-    }).catch(() => {});
-  }, [workOrders]);
-
-  if (!events || events.length === 0) return null;
-
-  // Sort: multi-NE (red/urgent) first, single-NE (orange) last
-  const sorted = [...events].sort((a, b) => (b.alarmed_ne_count || 0) - (a.alarmed_ne_count || 0));
-
-  return (
-    <Card title={<><AlertOutlined /> 光缆中断检测 ({events.length} 处疑似断点)</>}
-      size="small" style={{ marginBottom: 16, borderLeft: '4px solid #cf1322' }}>
-      {sorted.map((ev: any, i: number) => {
-        const evAlarms = ev.event_alarms || [];
-        const evNes = [...new Set(evAlarms.map((a: any) => a.ne))] as string[];
-        const isMulti = (ev.alarmed_ne_count || 0) >= 2;
-        return (
-        <Card key={i} size="small" style={{ marginBottom: 8 }}
-          title={<>
-            <Tag color={isMulti ? 'red' : 'orange'}>{isMulti ? '多网元' : '单网元'}</Tag>
-            <span style={{ fontWeight: 700 }}>{ev.title}</span>
-            <Tag>压缩比 {ev.compression_ratio}</Tag>
-            <Tag color="orange">{ev.affected_ne_count}站 {evAlarms.length}条告警</Tag>
-          </>}>
-          <p style={{ fontSize: 13, color: '#cf1322', fontWeight: 600 }}>
-            断点: {ev.cut_segment} | {ev.time_start && ev.time_end ? `${ev.time_start} ~ ${ev.time_end} | ` : ''}受影响: {ev.affected_nes?.join(' → ')}
-          </p>
-          <TopologyLinks nes={evNes} alarms={evAlarms} />
-          <Collapse size="small" ghost items={[{ key: 'detail', label: `告警明细 (${evAlarms.length} 条)`,
-            children: (
-              <Table size="small" bordered pagination={false}
-                dataSource={evAlarms.map((a: any, j: number) => ({ ...a, key: j }))}
-                columns={[
-                  { title: '网元', dataIndex: 'ne', width: 180, ellipsis: true },
-                  { title: '告警名称', dataIndex: 'name', width: 180, render: (v: string) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v}</div> },
-                  { title: '级别', dataIndex: 'severity', width: 80,
-                    render: (v: string) => <Tag color={v?.includes('紧急')?'red':v?.includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v}</Tag> },
-                  { title: '发生时间', dataIndex: 'first_time', width: 145, render: (v: string) => <span style={{fontSize:10}}>{(v||'').replace('T',' ')}</span> },
-                ]}
-              />
-            ),
-          }]} />
-          <div style={{ marginTop: 8 }}><FiberCutGuidanceButton ev={ev} /></div>
-        </Card>
-      );})}
-    </Card>
-  );
-}
-
-function FiberCutGuidanceButton({ ev }: { ev: any }) {
-  const [guidance, setGuidance] = useState<string | null>(null);
-  const [gLoading, setGLoading] = useState(false);
-  if (!ev.event_alarms?.length) return null;
-  return (
-    <div>
-      <Button size="small" icon={<RobotOutlined />} loading={gLoading}
-        onClick={async () => {
-          setGLoading(true); setGuidance(null);
-          try {
-            const r = await fetch('http://localhost:8000/api/fiber-cut-guidance', {
-              method: 'POST', headers: {'Content-Type': 'application/json'},
-              body: JSON.stringify({ title: ev.title, cut_segment: ev.cut_segment,
-                affected_nes: ev.affected_nes, alarm_count: ev.alarm_count,
-                sample_alarms: (ev.event_alarms || []).slice(0, 200).map((a: any) => ({
-                  ne: a.ne, name: a.name, severity: a.severity, first_time: a.first_time,
-                })),
-                topology_path: ev.topology_path || [],
-                link_details: (ev.link_details || []).slice(0, 20),
-              }),
-            }).then(r => r.json());
-            setGuidance(r.guidance);
-          } catch (e: any) { message.error(e.message); }
-          setGLoading(false);
-        }}>AI分析</Button>
-      {guidance && <Alert type="info" message={guidance} style={{ marginTop: 6, fontSize: 12, whiteSpace: 'pre-line' }} />}
-    </div>
-  );
-}
 
 function WorkOrderCard({ wo }: { wo: any }) {
   const shortName = wo.scenario_name.replace(/.*事件(\d+).*/, '事件$1').replace(/.*\(\d+网元\).*/, (m: string) => m);
@@ -459,7 +376,6 @@ export default function Dispatch() {
             }
           </Card>
 
-          <FiberCutAnalysis workOrders={valResult.work_orders} />
 
           {valResult.unmatched_alarms > 0 && (() => {
             const details = valResult.unmatched_details || [];
