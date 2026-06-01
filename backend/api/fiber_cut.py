@@ -251,6 +251,31 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
 
         fiber_ne_count = len(comp_nes)
         alarmed_ne_count = len(set(a.get("ne", "") for a in event_alarms))
+
+        # Separate fiber vs derivative alarms
+        fiber_alarms = [a for a in event_alarms if _is_fiber_alarm(a.get("name", ""))]
+        derivative_alarms = [a for a in event_alarms if _is_derivative(a.get("name", ""))]
+        other_alarms = [a for a in event_alarms if not _is_fiber_alarm(a.get("name", "")) and not _is_derivative(a.get("name", ""))]
+
+        # Build per-NE alarm type classification
+        alarm_ne_types: dict[str, str] = {}
+        for a in event_alarms:
+            ne = a.get("ne", "")
+            if not ne: continue
+            is_f = _is_fiber_alarm(a.get("name", ""))
+            is_d = _is_derivative(a.get("name", ""))
+            if is_f and is_d:
+                alarm_ne_types[ne] = "both"
+            elif is_f:
+                alarm_ne_types.setdefault(ne, "fiber")
+            elif is_d:
+                alarm_ne_types.setdefault(ne, "deriv")
+
+        print(f"[fiber_cut] Event: {len(fiber_alarms)} fiber + {len(derivative_alarms)} deriv + {len(other_alarms)} other = {len(event_alarms)} total, "
+              f"types: both={sum(1 for v in alarm_ne_types.values() if v=='both')} "
+              f"fiber={sum(1 for v in alarm_ne_types.values() if v=='fiber')} "
+              f"deriv={sum(1 for v in alarm_ne_types.values() if v=='deriv')}", flush=True)
+
         events.append({
             "fiber_ne_count": fiber_ne_count,
             "alarmed_ne_count": alarmed_ne_count,
@@ -264,6 +289,9 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
             "original_scenario": source_label,
             "priority": "紧急" if fiber_ne_count >= 2 else "重要",
             "event_alarms": event_alarms,
+            "fiber_alarms": fiber_alarms,
+            "derivative_alarms": derivative_alarms,
+            "alarm_ne_types": alarm_ne_types,
             "topology_path": topology_path,
             "time_start": time_start,
             "time_end": time_end,
@@ -274,19 +302,28 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
 
 def detect_fiber_cuts_from_alarms(alarms: list[dict], ne_graph: dict[str, set[str]]) -> list[dict]:
     """Detect fiber cuts from a flat list of alarms using topology-chain aggregation."""
+    total_fiber = sum(1 for a in alarms if _is_fiber_alarm(a.get("name", "")))
+    total_deriv = sum(1 for a in alarms if _is_derivative(a.get("name", "")))
+    print(f"[fiber_cut] Input: {len(alarms)} alarms ({total_fiber} fiber, {total_deriv} deriv)", flush=True)
+
     timed_alarms = [a for a in alarms if parse_time(a.get("first_time", "") or a.get("time", ""))]
     if len(timed_alarms) < 2:
+        print(f"[fiber_cut] Only {len(timed_alarms)} timed alarms, skipping", flush=True)
         return []
 
     windows = _split_into_time_windows(timed_alarms)
-    print(f"[fiber_cut] {len(timed_alarms)} timed alarms → {len(windows)} time windows")
+    print(f"[fiber_cut] {len(timed_alarms)} timed alarms → {len(windows)} time windows", flush=True)
 
     events = []
-    for w in windows:
+    for wi, w in enumerate(windows):
         window_events = _build_fiber_events_from_window(w, ne_graph)
         events.extend(window_events)
+        if wi % 10 == 0:
+            print(f"[fiber_cut] Window {wi+1}/{len(windows)}: {len(window_events)} events so far, total {len(events)}", flush=True)
 
-    print(f"[fiber_cut] Total events: {len(events)}")
+    total_fiber_in_events = sum(e.get("fiber_ne_count", 0) for e in events)
+    total_deriv_in_events = sum(len(e.get("derivative_alarms", [])) for e in events)
+    print(f"[fiber_cut] Done: {len(events)} events, {total_fiber_in_events} fiber NEs, {total_deriv_in_events} deriv alarms", flush=True)
     return events
 
 

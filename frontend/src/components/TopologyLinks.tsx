@@ -3,7 +3,7 @@ import { Collapse, Tag, Typography, Table, Switch } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import { api } from '../api/client';
 
-export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?: any[] }) {
+export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[]; alarms?: any[]; neTypes?: Record<string, string> }) {
   const [links, setLinks] = useState<any[] | null>(null);
   const [fullNes, setFullNes] = useState<string[]>(nes);
   const [hideHealthy, setHideHealthy] = useState(false);
@@ -38,6 +38,18 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
       }
     });
   }
+
+  // Color helper: 4-color mode if neTypes provided, else 2-color
+  const getNeColor = (ne: string, hasAlarm: boolean) => {
+    if (neTypes) {
+      const t = neTypes[ne];
+      if (t === 'both') return '#d46b08';   // orange
+      if (t === 'fiber') return '#cf1322';  // red
+      if (t === 'deriv') return '#d4b106';   // gold
+      return '#91cc75';                       // green (no alarm)
+    }
+    return hasAlarm ? '#d46b08' : '#91cc75';
+  };
 
   const alarmedNes = new Set(nes);
   const neSet = new Set(fullNes);
@@ -103,11 +115,18 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
         label: <Typography.Text type="secondary" style={{ fontSize: 12 }}>
           网元物理拓扑 ({displayLinks} 条链路, {displayNes} 个网元{hideHealthy ? ', 已隐藏无告警' : ''})
           <span style={{ marginLeft: 8 }}>
-            <Tag color="red" style={{fontSize:10}}>紧急</Tag>
-            <Tag color="orange" style={{fontSize:10}}>主要</Tag>
-            <Tag color="gold" style={{fontSize:10}}>次要</Tag>
-            <Tag color="blue" style={{fontSize:10}}>提示</Tag>
-            <Tag color="green" style={{fontSize:10}}>无告警</Tag>
+            {neTypes ? <>
+              <Tag color="red" style={{fontSize:10}}>光纤</Tag>
+              <Tag color="orange" style={{fontSize:10}}>光纤+衍生</Tag>
+              <Tag color="gold" style={{fontSize:10}}>衍生</Tag>
+              <Tag color="green" style={{fontSize:10}}>无告警</Tag>
+            </> : <>
+              <Tag color="red" style={{fontSize:10}}>紧急</Tag>
+              <Tag color="orange" style={{fontSize:10}}>主要</Tag>
+              <Tag color="gold" style={{fontSize:10}}>次要</Tag>
+              <Tag color="blue" style={{fontSize:10}}>提示</Tag>
+              <Tag color="green" style={{fontSize:10}}>无告警</Tag>
+            </>}
           </span>
           <span style={{ marginLeft: 12 }}>
             <Switch size="small" checked={hideHealthy} onChange={setHideHealthy}
@@ -156,7 +175,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                 return {
                   name: ne,
                   children: children.length > 0 ? children : undefined,
-                  itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: isLarge ? 1 : 2 },
+                  itemStyle: { color: getNeColor(ne, hasAlarm), borderColor: getNeColor(ne, hasAlarm), borderWidth: isLarge ? 1 : 2 },
                   alarmDetails: info?.alarmDetails || [],
                   hasAlarm, _info: info,
                 };
@@ -169,7 +188,7 @@ export default function TopologyLinks({ nes, alarms }: { nes: string[]; alarms?:
                   const hasAlarm = alarmedNes.has(n);
                   extraRoots.push({
                     name: n,
-                    itemStyle: { color: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderColor: hasAlarm ? (info?.color || '#d46b08') : '#91cc75', borderWidth: isLarge ? 1 : 2 },
+                    itemStyle: { color: getNeColor(n, hasAlarm), borderColor: getNeColor(n, hasAlarm), borderWidth: isLarge ? 1 : 2 },
                     alarmDetails: info?.alarmDetails || [],
                     hasAlarm, _info: info,
                   });
