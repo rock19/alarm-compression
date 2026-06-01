@@ -110,7 +110,7 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
     displayLinks = displayFilteredLinks.length;
   }
 
-  return (
+  return (<>
     <Collapse size="small" ghost style={{ marginTop: 4 }}
       items={[{
         key: 'topo',
@@ -311,5 +311,5 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
         />
       ) : <span style={{color:'#999'}}>该网元无告警</span>}
     </Modal>
-  );
+  </>);
 }
