@@ -204,16 +204,16 @@ export default function FiberCutPage() {
                   <Table size="small" bordered pagination={false} scroll={{ x: 900 }}
                     dataSource={evAlarms.map((a: any, j: number) => ({ ...a, key: j }))}
                     columns={[
-                      { title: '网管', dataIndex: '网管', width: 100, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
-                      { title: '网元', dataIndex: '网元', width: 140, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
-                      { title: '告警对象', dataIndex: '告警对象', width: 120, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
+                      { title: '网管', dataIndex: '网管', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+                      { title: '网元', dataIndex: '网元', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+                      { title: '告警对象', dataIndex: '告警对象', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
                       { title: '级别', dataIndex: '告警级别', width: 60, render: (v: any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
                       { title: '告警名称', dataIndex: '告警名称', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '告警类型', dataIndex: '告警类型', width: 80, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
-                      { title: '告警描述', dataIndex: '告警描述', width: 120, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
+                      { title: '告警类型', dataIndex: '告警类型', width: 80, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+                      { title: '告警描述', dataIndex: '告警描述', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
                       { title: '发生时间', dataIndex: '发生时间', width: 130, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
-                      { title: '关联业务', dataIndex: '关联业务', width: 80, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
-                      { title: '告警分析', dataIndex: '告警分析', width: 100, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v||''}</span> },
+                      { title: '关联业务', dataIndex: '关联业务', width: 80, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+                      { title: '告警分析', dataIndex: '告警分析', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
                     ]}
                   />),
               }]} />
