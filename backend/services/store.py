@@ -111,6 +111,13 @@ class Store:
         self._sim_fiber_events = events
         self._save_sim()
 
+    def set_sim_unmatched(self, alarms: list[dict]):
+        self._sim_unmatched = alarms
+        self._save_sim()
+
+    def get_sim_unmatched(self) -> list[dict]:
+        return getattr(self, "_sim_unmatched", [])
+
     def get_sim_fiber_events(self) -> list[dict]:
         return getattr(self, "_sim_fiber_events", [])
 
@@ -121,6 +128,7 @@ class Store:
                 "alarms": getattr(self, "_sim_alarms", []),
                 "dispatch_result": getattr(self, "_sim_dispatch_result", None),
                 "fiber_events": getattr(self, "_sim_fiber_events", []),
+                "unmatched_alarms": getattr(self, "_sim_unmatched", []),
             }
             with open(SIM_DATA_FILE, "w") as f:
                 json.dump(data, f, default=_serialize_datetime, ensure_ascii=False, indent=2)
@@ -136,7 +144,8 @@ class Store:
                 self._sim_alarms = data.get("alarms", [])
                 self._sim_dispatch_result = data.get("dispatch_result")
                 self._sim_fiber_events = data.get("fiber_events", [])
-                print(f"[store] Loaded sim: {len(self._sim_alarms)} alarms, {len(self._sim_fiber_events)} fiber events")
+                self._sim_unmatched = data.get("unmatched_alarms", [])
+                print(f"[store] Loaded sim: {len(self._sim_alarms)} alarms, {len(self._sim_fiber_events)} events, {len(self._sim_unmatched)} unmatched")
         except Exception as e:
             print(f"[store] Failed to load sim data: {e}")
 

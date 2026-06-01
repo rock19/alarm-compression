@@ -9,6 +9,7 @@ export default function FiberCutPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [fiberEvents, setFiberEvents] = useState<any[]>([]);
+  const [unmatchedAlarms, setUnmatchedAlarms] = useState<any[]>([]);
   const [queryStart, setQueryStart] = useState('');
   const [queryEnd, setQueryEnd] = useState('');
   const [querySpec, setQuerySpec] = useState('3');
@@ -30,6 +31,7 @@ export default function FiberCutPage() {
         const cached = await api.fiberCutCached() as any;
         if (cached?.events?.length) {
           setFiberEvents(cached.events);
+          if (cached.unmatched_alarms) setUnmatchedAlarms(cached.unmatched_alarms);
         }
       } catch {}
       setCacheLoading(false);
@@ -51,6 +53,7 @@ export default function FiberCutPage() {
         if (r.error) { message.error(r.error); setLoading(false); return; }
         const fc = await api.fiberCutDetect() as any;
         setFiberEvents(fc.events || []);
+        if (fc.unmatched_alarms) setUnmatchedAlarms(fc.unmatched_alarms);
         try { const vr = await api.validateStore() as any; setResult(vr); }
         catch { setResult({ total_alarms: fc.total_alarms_scanned || 0 }); }
         message.success(`当前告警: ${r.loaded}条`);
@@ -68,6 +71,7 @@ export default function FiberCutPage() {
               clearInterval(poll);
               const fc = await api.fiberCutDetect() as any;
               setFiberEvents(fc.events || []);
+              if (fc.unmatched_alarms) setUnmatchedAlarms(fc.unmatched_alarms);
               try { const vr = await api.validateStore() as any; setResult(vr); }
               catch { setResult({ total_alarms: fc.total_alarms_scanned || 0 }); }
               setApiLoading(false);
@@ -184,7 +188,7 @@ export default function FiberCutPage() {
             <div style={{fontSize:10,color:'#1890ff',marginTop:-8}}>点击查看明细</div>
           </Card></Col>
           <Col span={4}><Card size="small" hoverable onClick={() => setMissDrawerOpen(true)} style={{cursor:'pointer'}}>
-            <Statistic title="未命中光缆中断" value={actualUnmatchedCount} suffix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} />
+            <Statistic title="未命中光缆中断" value={unmatchedAlarms.length} suffix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} />
             <div style={{fontSize:10,color:'#1890ff',marginTop:-8}}>点击查看明细</div>
           </Card></Col>
           <Col span={4}><Card size="small"><Statistic title="光缆事件" value={fiberEvents.length} suffix={<AlertOutlined style={{ color: '#cf1322' }} />} /></Card></Col>
@@ -288,9 +292,9 @@ export default function FiberCutPage() {
       </Drawer>
 
       {/* Miss alarms Drawer */}
-      <Drawer title={`未命中光缆中断的告警 (${actualUnmatchedCount} 条)`} open={missDrawerOpen} onClose={() => setMissDrawerOpen(false)} width="90%">
+      <Drawer title={`未命中光缆中断的告警 (${unmatchedAlarms.length} 条)`} open={missDrawerOpen} onClose={() => setMissDrawerOpen(false)} width="90%">
         <Table size="small" bordered pagination={{pageSize:20}} scroll={{x:900}}
-          dataSource={unmatchedFiberDetails.map((a: any, j: number) => ({...a, key: j}))}
+          dataSource={unmatchedAlarms.map((a: any, j: number) => ({...a, key: j}))}
           columns={[
             { title: '网元', dataIndex: 'ne', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
             { title: '告警名称', dataIndex: 'name', width: 160, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },

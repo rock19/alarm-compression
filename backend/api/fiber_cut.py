@@ -44,6 +44,7 @@ class FiberCutResponse(BaseModel):
     total_compression: str = ""
     total_alarms_scanned: int = 0
     fiber_alarm_count: int = 0
+    unmatched_alarms: list[dict] = []
 
 
 def _is_fiber_alarm(name: str) -> bool:
@@ -398,12 +399,14 @@ async def get_cached_fiber_events():
     """Get cached fiber events from sim store only (no heavy disk load)."""
     try:
         events = store.get_sim_fiber_events()
+        unmatched = store.get_sim_unmatched()
         total = sum(e.get("alarm_count", 0) for e in events) if events else 0
         return {"events": events or [], "total_alarms_covered": total,
                 "total_compression": f"{total}:{len(events)}" if events else "N/A",
+                "unmatched_alarms": unmatched or [],
                 "cached": True}
     except Exception:
-        return {"events": [], "total_alarms_covered": 0, "total_compression": "N/A", "cached": False}
+        return {"events": [], "total_alarms_covered": 0, "total_compression": "N/A", "unmatched_alarms": [], "cached": False}
 
 
 @router.post("/fiber-cut-detect", response_model=FiberCutResponse)
@@ -422,13 +425,24 @@ async def detect_fiber_cuts_from_store():
     total_compression = f"{total_alarms}:{len(events)}" if events else "N/A"
     fiber_alarm_count = sum(1 for a in normalized if _is_fiber_alarm(a["name"]))
 
+    # Compute unmatched alarms (alarms NOT in any fiber event)
+    matched_keys = set()
+    for ev in events:
+        for a in ev.get("event_alarms", []):
+            matched_keys.add((a.get("ne", ""), a.get("name", ""), str(a.get("first_time", ""))))
+    unmatched_alarms = [a for a in normalized
+                        if (a.get("ne", ""), a.get("name", ""), str(a.get("first_time", ""))) not in matched_keys]
+    print(f"[fiber_cut] Matched: {total_alarms}, Unmatched: {len(unmatched_alarms)}, Total: {len(normalized)}", flush=True)
+
     store.set_sim_fiber_events(events)
+    store.set_sim_unmatched(unmatched_alarms)
     return FiberCutResponse(
         events=events,
         total_alarms_covered=total_alarms,
         total_compression=total_compression,
         total_alarms_scanned=len(alarms),
         fiber_alarm_count=fiber_alarm_count,
+        unmatched_alarms=unmatched_alarms,
     )
 
 
