@@ -333,14 +333,23 @@ async def analyze_fiber_cuts(req: FiberCutRequest):
 
 
 def _normalize_alarm(a: dict) -> dict:
-    """Normalize Chinese field names to English for fiber cut detection."""
+    """Normalize Chinese field names to English for fiber cut detection. Keep all original fields."""
     return {
         "name": a.get("告警名称", "") or a.get("name", ""),
         "ne": a.get("网元", "") or a.get("ne", ""),
         "first_time": str(a.get("发生时间", "") or a.get("first_time", "") or a.get("time", "")),
         "severity": a.get("告警级别", "") or a.get("severity", ""),
-        # Keep original fields for reference
-        "_orig": a,
+        # Keep all original fields for detail display
+        "网管": a.get("网管", "") or a.get("network_manager", ""),
+        "网元": a.get("网元", "") or a.get("ne", ""),
+        "告警对象": a.get("告警对象", "") or a.get("alarm_object", ""),
+        "告警级别": a.get("告警级别", "") or a.get("severity", ""),
+        "告警名称": a.get("告警名称", "") or a.get("name", ""),
+        "告警类型": a.get("告警类型", "") or a.get("alarm_type", ""),
+        "告警描述": a.get("告警描述", "") or a.get("alarm_desc", ""),
+        "发生时间": str(a.get("发生时间", "") or ""),
+        "关联业务": a.get("关联业务", "") or a.get("bus_name", ""),
+        "告警分析": a.get("告警分析", "") or a.get("analysis", ""),
     }
 
 
