@@ -30,6 +30,9 @@ class FiberCutEvent(BaseModel):
     fiber_ne_count: int = 0
     alarmed_ne_count: int = 0
     event_alarms: list[dict] = []
+    fiber_alarms: list[dict] = []
+    derivative_alarms: list[dict] = []
+    alarm_ne_types: dict = {}
     topology_path: list[str] = []
     time_start: str = ""
     time_end: str = ""
