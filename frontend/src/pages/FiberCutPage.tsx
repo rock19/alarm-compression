@@ -238,13 +238,10 @@ export default function FiberCutPage() {
                 断点: {ev.cut_segment} | {ev.time_start && ev.time_end ? `${ev.time_start} ~ ${ev.time_end} | ` : ''}受影响: {ev.affected_nes?.join(' → ')}
               </p>
               <TopologyLinks nes={evNes} alarms={evAlarms} neTypes={ev.alarm_ne_types} />
-              <Collapse size="small" ghost items={[{ key: 'detail', label: `告警明细 (${evAlarms.length} 条)`,
-                children: (
-                  <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true,pageSizeOptions:['20','50','100']}} scroll={{ x: 1000 }}
-                    dataSource={evAlarms.map((a: any, j: number) => ({ ...a, key: j }))}
-                    columns={ALARM_COLUMNS}
-                  />),
-              }]} />
+              <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true,pageSizeOptions:['20','50','100']}} scroll={{ x: 1000 }}
+                dataSource={evAlarms.map((a: any, j: number) => ({ ...a, key: j }))}
+                columns={ALARM_COLUMNS}
+              />
               <FiberGuidance ev={ev} />
             </Card>
           );})}
