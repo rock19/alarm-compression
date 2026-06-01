@@ -5,6 +5,30 @@ import { api } from '../api/client';
 import { useTaskProgress } from '../hooks/useTaskProgress';
 import TopologyLinks from '../components/TopologyLinks';
 
+// Shared alarm detail columns (10 fields, consistent across all tables)
+const ALARM_COLUMNS = [
+  { title: '网管', dataIndex: '网管', width: 100, sorter: (a:any,b:any)=>(a.网管||'').localeCompare(b.网管||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '网元', dataIndex: '网元', width: 140, sorter: (a:any,b:any)=>(a.网元||'').localeCompare(b.网元||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '告警对象', dataIndex: '告警对象', width: 120, sorter: (a:any,b:any)=>(a.告警对象||'').localeCompare(b.告警对象||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '级别', dataIndex: '告警级别', width: 60, sorter: (a:any,b:any)=>(a.告警级别||'').localeCompare(b.告警级别||''),
+    render: (v:any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
+  { title: '告警名称', dataIndex: '告警名称', width: 150, sorter: (a:any,b:any)=>(a.告警名称||'').localeCompare(b.告警名称||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '告警类型', dataIndex: '告警类型', width: 80, sorter: (a:any,b:any)=>(a.告警类型||'').localeCompare(b.告警类型||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '告警描述', dataIndex: '告警描述', width: 130, sorter: (a:any,b:any)=>(a.告警描述||'').localeCompare(b.告警描述||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '发生时间', dataIndex: '发生时间', width: 130, sorter: (a:any,b:any)=>(a.发生时间||'').localeCompare(b.发生时间||''),
+    render: (v:any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
+  { title: '关联业务', dataIndex: '关联业务', width: 80, sorter: (a:any,b:any)=>(a.关联业务||'').localeCompare(b.关联业务||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+  { title: '告警分析', dataIndex: '告警分析', width: 100, sorter: (a:any,b:any)=>(a.告警分析||'').localeCompare(b.告警分析||''),
+    render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+];
+
 export default function FiberCutPage() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -216,20 +240,9 @@ export default function FiberCutPage() {
               <TopologyLinks nes={evNes} alarms={evAlarms} neTypes={ev.alarm_ne_types} />
               <Collapse size="small" ghost items={[{ key: 'detail', label: `告警明细 (${evAlarms.length} 条)`,
                 children: (
-                  <Table size="small" bordered pagination={false} scroll={{ x: 900 }}
+                  <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true,pageSizeOptions:['20','50','100']}} scroll={{ x: 1000 }}
                     dataSource={evAlarms.map((a: any, j: number) => ({ ...a, key: j }))}
-                    columns={[
-                      { title: '网管', dataIndex: '网管', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '网元', dataIndex: '网元', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '告警对象', dataIndex: '告警对象', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '级别', dataIndex: '告警级别', width: 60, render: (v: any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
-                      { title: '告警名称', dataIndex: '告警名称', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '告警类型', dataIndex: '告警类型', width: 80, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '告警描述', dataIndex: '告警描述', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '发生时间', dataIndex: '发生时间', width: 130, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
-                      { title: '关联业务', dataIndex: '关联业务', width: 80, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                      { title: '告警分析', dataIndex: '告警分析', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                    ]}
+                    columns={ALARM_COLUMNS}
                   />),
               }]} />
               <FiberGuidance ev={ev} />
@@ -259,33 +272,15 @@ export default function FiberCutPage() {
       <Drawer title="命中告警明细" open={hitDrawerOpen} onClose={() => setHitDrawerOpen(false)} width="90%">
         <Tabs items={[
           { key: 'fiber', label: `光纤告警 (${fiberEvents.reduce((s: number, ev: any) => s + (ev.fiber_alarms || []).length, 0)}条)`,
-            children: <Table size="small" bordered pagination={{pageSize:20}} scroll={{x:900}}
-              dataSource={fiberEvents.flatMap((ev: any) => (ev.fiber_alarms || []).map((a: any, j: number) => ({...a, key: `${ev.title}_${j}`, event: ev.title})))}
-              columns={[
-                { title: '事件', dataIndex: 'event', width: 200, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v}</span> },
-                { title: '网管', dataIndex: '网管', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '网元', dataIndex: '网元', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '告警对象', dataIndex: '告警对象', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '级别', dataIndex: '告警级别', width: 60, render: (v: any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
-                { title: '告警名称', dataIndex: '告警名称', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '告警描述', dataIndex: '告警描述', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '发生时间', dataIndex: '发生时间', width: 130, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
-              ]}
+            children: <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true}} scroll={{x:1000}}
+              dataSource={fiberEvents.flatMap((ev: any) => (ev.fiber_alarms || []).map((a: any, j: number) => ({...a, key: `${ev.title}_${j}`})))}
+              columns={ALARM_COLUMNS}
             />
           },
           { key: 'deriv', label: `衍生告警 (${fiberEvents.reduce((s: number, ev: any) => s + (ev.derivative_alarms || []).length, 0)}条)`,
-            children: <Table size="small" bordered pagination={{pageSize:20}} scroll={{x:900}}
-              dataSource={fiberEvents.flatMap((ev: any) => (ev.derivative_alarms || []).map((a: any, j: number) => ({...a, key: `${ev.title}_${j}`, event: ev.title})))}
-              columns={[
-                { title: '事件', dataIndex: 'event', width: 200, ellipsis: true, render: (v: any) => <span style={{fontSize:10}}>{v}</span> },
-                { title: '网管', dataIndex: '网管', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '网元', dataIndex: '网元', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '告警对象', dataIndex: '告警对象', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '级别', dataIndex: '告警级别', width: 60, render: (v: any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
-                { title: '告警名称', dataIndex: '告警名称', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '告警描述', dataIndex: '告警描述', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-                { title: '发生时间', dataIndex: '发生时间', width: 130, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
-              ]}
+            children: <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true}} scroll={{x:1000}}
+              dataSource={fiberEvents.flatMap((ev: any) => (ev.derivative_alarms || []).map((a: any, j: number) => ({...a, key: `${ev.title}_${j}`})))}
+              columns={ALARM_COLUMNS}
             />
           },
         ]} />
@@ -293,16 +288,9 @@ export default function FiberCutPage() {
 
       {/* Miss alarms Drawer */}
       <Drawer title={`未命中光缆中断的告警 (${unmatchedAlarms.length} 条)`} open={missDrawerOpen} onClose={() => setMissDrawerOpen(false)} width="90%">
-        <Table size="small" bordered pagination={{pageSize:20}} scroll={{x:900}}
+        <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true}} scroll={{x:1000}}
           dataSource={unmatchedAlarms.map((a: any, j: number) => ({...a, key: j}))}
-          columns={[
-            { title: '网元', dataIndex: 'ne', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '告警名称', dataIndex: 'name', width: 160, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '级别', dataIndex: 'severity', width: 70, render: (v: any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
-            { title: '告警描述', dataIndex: 'alarm_desc', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '发生时间', dataIndex: 'first_time', width: 130, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
-            { title: '网管', dataIndex: 'network_manager', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-          ]}
+          columns={ALARM_COLUMNS}
         />
       </Drawer>
     </div>
