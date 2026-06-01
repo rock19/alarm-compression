@@ -339,9 +339,9 @@ def _normalize_alarm(a: dict) -> dict:
 
 @router.get("/fiber-cut-cached")
 async def get_cached_fiber_events():
-    """Get cached fiber cut events (for menu switching persistence)."""
+    """Get cached fiber events from sim store only (no heavy disk load)."""
     try:
-        events = store.get_sim_fiber_events() or store.get_fiber_events()
+        events = store.get_sim_fiber_events()
         total = sum(e.get("alarm_count", 0) for e in events) if events else 0
         return {"events": events or [], "total_alarms_covered": total,
                 "total_compression": f"{total}:{len(events)}" if events else "N/A",

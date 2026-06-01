@@ -291,7 +291,7 @@ async def _validate_records(records: list[dict]):
 @router.get("/dispatch-cached")
 async def get_cached_dispatch():
     """Get cached dispatch result (for menu switching persistence)."""
-    cached = store.get_sim_dispatch_result() or store.get_dispatch_result()
+    cached = store.get_sim_dispatch_result()
     if cached:
         return cached
     return {"work_orders": [], "total_alarms": 0, "message": "无缓存数据，请先导入模拟数据"}
