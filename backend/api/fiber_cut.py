@@ -4,6 +4,7 @@ Fiber cut detection — time-aware topology propagation analysis.
 import os
 from fastapi import APIRouter, HTTPException
 from services.store import store
+from services.topology_api import get_neighbors_sync
 from pydantic import BaseModel
 from collections import defaultdict
 from datetime import datetime
@@ -113,14 +114,14 @@ def _split_into_time_windows(alarms: list[dict]) -> list[list[dict]]:
 
 def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]],
                                      source_label: str = "") -> list[dict]:
-    """Build fiber cut events from a time window using topology-chain aggregation.
+    """Build fiber cut events using REAL-TIME topology queries (not pre-built graph).
 
     Algorithm:
     1. Find all NEs with fiber alarms
-    2. For each fiber NE, check connected neighbors for alarms (topology + time window)
-    3. Follow the chain: A→B(has alarm)→C(has alarm)→D(no alarm, stop)
-    4. Each connected component = one event
-    5. The cut segment = last alarmed NE ↔ first non-alarmed neighbor
+    2. For each fiber NE, query topology API for actual neighbors
+    3. If neighbor has alarms in time window → include, recurse to its neighbors
+    4. If neighbor has NO alarms → it's a leaf (healthy endpoint), stop
+    5. Each topologically-connected component = one event
     """
     tg_nes = set(a.get("ne", "") for a in tg)
     ne_alarms_map: dict[str, list[dict]] = {}
@@ -133,8 +134,8 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
     if not fiber_nes:
         return []
 
-    # Build topology-constrained connected components
-    # Use Union-Find to group NEs that are topologically connected AND all have alarms
+    # Build topology-constrained connected components using REAL-TIME queries
+    # Only follow the chain through actual topology connections
     parent: dict[str, str] = {}
     def find(x):
         while parent.get(x, x) != x:
@@ -148,9 +149,18 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
     for ne in fiber_nes:
         parent.setdefault(ne, ne)
 
-    # Connect fiber NEs that are neighbors in topology
+    # Cache neighbor queries to avoid repeated API calls
+    neighbor_cache: dict[str, set[str]] = {}
+
+    def get_neighbors(ne: str) -> set[str]:
+        if ne not in neighbor_cache:
+            neighbor_cache[ne] = get_neighbors_sync(ne)
+        return neighbor_cache[ne]
+
+    # Connect fiber NEs that are REAL neighbors (verified by topology API)
     for ne in fiber_nes:
-        for peer in ne_graph.get(ne, set()):
+        real_neighbors = get_neighbors(ne)
+        for peer in real_neighbors:
             if peer in fiber_nes:
                 union(ne, peer)
 
@@ -162,22 +172,20 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
 
     events = []
     for root, comp_nes in components.items():
-        # For each component, also include non-fiber NEs connected to this component
-        # that have alarms (derivative alarms etc.)
         comp_set = set(comp_nes)
         all_affected = list(comp_nes)
-        # Add NEs with derivative alarms that are neighbors of fiber NEs
+
+        # Add alarmed neighbors (derivative alarms) that are connected via real topology
         for ne in comp_nes:
-            for peer in ne_graph.get(ne, set()):
+            for peer in get_neighbors(ne):
                 if peer in tg_nes and peer not in comp_set:
                     comp_set.add(peer)
                     all_affected.append(peer)
 
-        # Find the cut segment: follow chain from one end to the other
-        # Build adjacency within component
+        # Build adjacency within component using REAL topology
         comp_adj: dict[str, list[str]] = {}
         for ne in all_affected:
-            comp_adj[ne] = [p for p in ne_graph.get(ne, set()) if p in comp_set]
+            comp_adj[ne] = [p for p in get_neighbors(ne) if p in comp_set]
 
         # Find endpoints (nodes with 0 or 1 connections within component)
         endpoints = [ne for ne in all_affected if len(comp_adj.get(ne, [])) <= 1]
@@ -196,15 +204,14 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
             for nb in comp_adj.get(cur, []):
                 if nb not in visited:
                     queue.append(nb)
-        # Add unreachable NEs
         for ne in all_affected:
             if ne not in visited:
                 ordered.append(ne)
 
-        # Find cut_endpoint: the last NE in the chain; healthy_endpoint: its non-alarmed neighbor
+        # Cut endpoint: last alarmed NE; healthy endpoint: its REAL neighbor with NO alarms
         cut_endpoint = ordered[-1] if ordered else (comp_nes[0] if comp_nes else "?")
         healthy_endpoint = "对端"
-        for peer in ne_graph.get(cut_endpoint, set()):
+        for peer in get_neighbors(cut_endpoint):
             if peer not in comp_set:
                 healthy_endpoint = peer
                 break

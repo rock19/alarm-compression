@@ -130,6 +130,41 @@ def compute_connected_groups(adjacency: dict[str, set[str]]) -> dict[str, str]:
     return groups
 
 
+def query_ne_neighbors_sync(ne_name: str) -> list[dict]:
+    """Synchronous version for fiber cut detection."""
+    try:
+        with httpx.Client(verify=False, timeout=15.0) as client:
+            resp = client.post(
+                TOPO_API_URL,
+                json={
+                    "current": 1, "pageSize": 200,
+                    "params": {"emsId": "-1", "aDev": ne_name, "aPort": "", "zDev": "", "zPort": ""},
+                    "templateId": TOPO_TEMPLATE_ID,
+                },
+            )
+            data = resp.json()
+            if data.get("status") == 1:
+                return data.get("data", {}).get("rowData", [])
+            return []
+    except Exception as e:
+        print(f"[topology_api] query_neighbors_sync failed for {ne_name}: {e}")
+        return []
+
+
+def get_neighbors_sync(ne_name: str) -> set[str]:
+    """Get neighbor NE names for a given NE (synchronous, for fiber cut detection)."""
+    links = query_ne_neighbors_sync(ne_name)
+    neighbors = set()
+    for link in links:
+        src = link.get("aDev", "")
+        tgt = link.get("zDev", "")
+        if src == ne_name and tgt:
+            neighbors.add(tgt)
+        elif tgt == ne_name and src:
+            neighbors.add(src)
+    return neighbors
+
+
 def parse_topology_links(ne_neighbors: dict[str, list[dict]]) -> list[dict]:
     """
     Convert raw topology API response to standardized link format.
