@@ -259,6 +259,9 @@ function FiberGuidance({ ev }: { ev: any }) {
                 affected_nes: ev.affected_nes, alarm_count: ev.alarm_count,
                 sample_alarms: (ev.event_alarms || []).slice(0, 200).map((a: any) => ({
                   ne: a.ne, name: a.name, severity: a.severity, first_time: a.first_time,
+                  网管: a.网管, 网元: a.网元, 告警对象: a.告警对象, 告警级别: a.告警级别,
+                  告警名称: a.告警名称, 告警类型: a.告警类型, 告警描述: a.告警描述,
+                  发生时间: a.发生时间, 关联业务: a.关联业务, 告警分析: a.告警分析,
                 })),
                 topology_path: ev.topology_path || [],
                 link_details: (ev.link_details || []).slice(0, 20),
