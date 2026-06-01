@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Collapse, Tag, Typography, Table, Switch } from 'antd';
+import { Collapse, Tag, Typography, Table, Switch, Modal } from 'antd';
 import ReactECharts from 'echarts-for-react';
 import { api } from '../api/client';
 
@@ -7,6 +7,8 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
   const [links, setLinks] = useState<any[] | null>(null);
   const [fullNes, setFullNes] = useState<string[]>(nes);
   const [hideHealthy, setHideHealthy] = useState(false);
+  const [neModalOpen, setNeModalOpen] = useState(false);
+  const [neModalData, setNeModalData] = useState<{ne: string; alarms: any[]} | null>(null);
 
   useEffect(() => {
     if (nes.length === 0) return;
@@ -45,7 +47,7 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
       const t = neTypes[ne];
       if (t === 'both') return '#d46b08';   // orange
       if (t === 'fiber') return '#cf1322';  // red
-      if (t === 'deriv') return '#d4b106';   // gold
+      if (t === 'deriv') return '#d4880f';   // amber (distinct from fiber/orange)
       return '#91cc75';                       // green (no alarm)
     }
     return hasAlarm ? '#d46b08' : '#91cc75';
@@ -117,7 +119,7 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
           <span style={{ marginLeft: 8 }}>
             {neTypes ? <>
               <Tag color="red" style={{fontSize:10}}>光纤</Tag>
-              <Tag color="orange" style={{fontSize:10}}>光纤+衍生</Tag>
+              <Tag color="orange" style={{fontSize:10}}>两者</Tag>
               <Tag color="gold" style={{fontSize:10}}>衍生</Tag>
               <Tag color="green" style={{fontSize:10}}>无告警</Tag>
             </> : <>
@@ -263,7 +265,17 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
                   emphasis: { focus: 'descendant', lineStyle: { color: '#333', width: 2.5 } },
                 }],
               };
-            })()} style={{ height: chartHeight }} />
+            })()} style={{ height: chartHeight }}
+              onEvents={{
+                click: (params: any) => {
+                  if (params.data) {
+                    const d = params.data;
+                    setNeModalData({ ne: d.name, alarms: d.alarmDetails || [] });
+                    setNeModalOpen(true);
+                  }
+                }
+              }}
+            />
             <Collapse size="small" ghost
               items={[{
                 key: 'link-table',
@@ -285,5 +297,19 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
         ),
       }]}
     />
+    <Modal title={`${neModalData?.ne || ''} 告警明细`} open={neModalOpen} onCancel={() => setNeModalOpen(false)} footer={null} width={800}>
+      {neModalData?.alarms?.length ? (
+        <Table size="small" bordered pagination={false}
+          dataSource={neModalData.alarms.map((a: any, j: number) => ({...a, key: j}))}
+          columns={[
+            { title: '告警名称', dataIndex: 'name', width: 160, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:11}}>{v||''}</div> },
+            { title: '级别', dataIndex: 'severity', width: 70, render: (v:any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
+            { title: '告警对象', dataIndex: 'alarm_object', width: 120, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+            { title: '告警描述', dataIndex: 'alarm_desc', width: 150, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+            { title: '时间', dataIndex: 'first_time', width: 140, render: (v:any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
+          ]}
+        />
+      ) : <span style={{color:'#999'}}>该网元无告警</span>}
+    </Modal>
   );
 }

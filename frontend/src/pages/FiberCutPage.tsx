@@ -98,7 +98,7 @@ export default function FiberCutPage() {
   const affectedNECount = affectedNEs.size;
   const totalEventAlarms = fiberEvents.reduce((sum: number, ev: any) => sum + (ev.alarm_count || 0), 0);
 
-  // Build alarm keys from fiber events to exclude from unmatched table
+  // Build set of alarm keys that are in fiber events (matched)
   const fiberAlarmKeys = new Set(
     fiberEvents.flatMap((ev: any) =>
       (ev.event_alarms || []).map((a: any) =>
@@ -107,7 +107,7 @@ export default function FiberCutPage() {
     )
   );
 
-  // Use work order alarms for unmatched table, excluding fiber event alarms
+  // Unmatched = all WO alarms minus fiber event alarms (same source as panel total)
   const allWoAlarms = (result?.work_orders || []).flatMap((wo: any) => wo.triggered_alarms || []);
   const unmatchedFiberDetails = allWoAlarms.filter((a: any) =>
     !fiberAlarmKeys.has(`${a.ne || ''}|${a.name || ''}|${a.first_time || a.time || ''}`)
@@ -116,6 +116,9 @@ export default function FiberCutPage() {
   const filteredUnmatched = unmatchedFiberDetails.filter((a: any) =>
     !filterText || (a.ne || '').includes(filterText) || (a.name || '').includes(filterText)
   );
+
+  // Use actual unmatched count for drawer
+  const actualUnmatchedCount = unmatchedFiberDetails.length;
 
   return (
     <div>
@@ -181,7 +184,7 @@ export default function FiberCutPage() {
             <div style={{fontSize:10,color:'#1890ff',marginTop:-8}}>点击查看明细</div>
           </Card></Col>
           <Col span={4}><Card size="small" hoverable onClick={() => setMissDrawerOpen(true)} style={{cursor:'pointer'}}>
-            <Statistic title="未命中光缆中断" value={unmatchedFiberCount} suffix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} />
+            <Statistic title="未命中光缆中断" value={actualUnmatchedCount} suffix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} />
             <div style={{fontSize:10,color:'#1890ff',marginTop:-8}}>点击查看明细</div>
           </Card></Col>
           <Col span={4}><Card size="small"><Statistic title="光缆事件" value={fiberEvents.length} suffix={<AlertOutlined style={{ color: '#cf1322' }} />} /></Card></Col>
@@ -285,14 +288,16 @@ export default function FiberCutPage() {
       </Drawer>
 
       {/* Miss alarms Drawer */}
-      <Drawer title={`未命中光缆中断的告警 (${unmatchedFiberDetails.length} 条)`} open={missDrawerOpen} onClose={() => setMissDrawerOpen(false)} width="90%">
+      <Drawer title={`未命中光缆中断的告警 (${actualUnmatchedCount} 条)`} open={missDrawerOpen} onClose={() => setMissDrawerOpen(false)} width="90%">
         <Table size="small" bordered pagination={{pageSize:20}} scroll={{x:900}}
           dataSource={unmatchedFiberDetails.map((a: any, j: number) => ({...a, key: j}))}
           columns={[
             { title: '网元', dataIndex: 'ne', width: 140, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
             { title: '告警名称', dataIndex: 'name', width: 160, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
             { title: '级别', dataIndex: 'severity', width: 70, render: (v: any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
-            { title: '时间', dataIndex: 'first_time', width: 140, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
+            { title: '告警描述', dataIndex: 'alarm_desc', width: 120, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
+            { title: '发生时间', dataIndex: 'first_time', width: 130, render: (v: any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
+            { title: '网管', dataIndex: 'network_manager', width: 100, render: (v: any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
           ]}
         />
       </Drawer>
