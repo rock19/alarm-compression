@@ -404,22 +404,24 @@ class FiberCutGuidanceRequest(BaseModel):
 
 @router.post("/fiber-cut-guidance")
 async def fiber_cut_guidance(req: FiberCutGuidanceRequest):
-    # Build alarm detail text
-    ne_alarm_map: dict[str, list[str]] = {}
-    for a in req.sample_alarms:
-        ne = a.get('ne', '')
-        name = a.get('name', '')
-        sev = a.get('severity', '')
-        t = (a.get('first_time', '') or '').replace('T', ' ')
-        if ne not in ne_alarm_map:
-            ne_alarm_map[ne] = []
-        ne_alarm_map[ne].append(f"{name}[{sev}] {t}")
-
+    # Build alarm detail text with all 10 fields
     alarms_text = ""
-    for ne, alarms in list(ne_alarm_map.items())[:20]:
-        alarms_text += f"\n  {ne}（{len(alarms)}条）:"
-        for a in alarms[:3]:
-            alarms_text += f"\n    - {a}"
+    for a in req.sample_alarms[:30]:
+        ne = a.get('ne', '') or a.get('网元', '')
+        mgr = a.get('网管', '') or a.get('network_manager', '')
+        obj = a.get('告警对象', '') or a.get('alarm_object', '')
+        sev = a.get('severity', '') or a.get('告警级别', '')
+        name = a.get('name', '') or a.get('告警名称', '')
+        atype = a.get('告警类型', '') or a.get('alarm_type', '')
+        desc = a.get('告警描述', '') or a.get('alarm_desc', '')
+        t = str(a.get('first_time', '') or a.get('发生时间', '') or '').replace('T', ' ')[:19]
+        bus = a.get('关联业务', '') or a.get('bus_name', '')
+        analysis = a.get('告警分析', '') or a.get('analysis', '')
+        alarms_text += f"\n  [{mgr}] {ne} | {obj} | {name} | {sev} | {atype}"
+        if desc: alarms_text += f" | {desc[:60]}"
+        if t: alarms_text += f" | {t}"
+        if bus: alarms_text += f" | 业务:{bus}"
+        if analysis: alarms_text += f" | 分析:{analysis[:60]}"
 
     # Build topology text
     topo_text = ""
