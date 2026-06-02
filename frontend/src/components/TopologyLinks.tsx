@@ -48,8 +48,7 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
       if (t === 'both') return '#d46b08';   // orange: fiber+deriv
       if (t === 'fiber') return '#cf1322';  // red: fiber only
       if (t === 'deriv') return '#d4880f';   // amber: deriv only
-      if (hasAlarm) return '#722ed1';       // purple: has alarm but not fiber/deriv
-      return '#91cc75';                      // green: truly no alarm
+      return '#91cc75';                       // green: no alarm
     }
     return hasAlarm ? '#d46b08' : '#91cc75';
   };
@@ -122,7 +121,6 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
               <Tag color="red" style={{fontSize:10}}>光纤</Tag>
               <Tag color="orange" style={{fontSize:10}}>两者</Tag>
               <Tag color="gold" style={{fontSize:10}}>衍生</Tag>
-              <Tag color="purple" style={{fontSize:10}}>其他告警</Tag>
               <Tag color="green" style={{fontSize:10}}>无告警</Tag>
             </> : <>
               <Tag color="red" style={{fontSize:10}}>紧急</Tag>

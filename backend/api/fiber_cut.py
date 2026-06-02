@@ -221,7 +221,8 @@ def _build_fiber_events_from_window(tg: list[dict], ne_graph: dict[str, set[str]
                 break
 
         segment = f"{cut_endpoint} 至 {healthy_endpoint}"
-        event_alarms = [a for a in tg if a.get("ne", "") in comp_set]
+        event_alarms = [a for a in tg if a.get("ne", "") in comp_set
+                        and (_is_fiber_alarm(a.get("name", "")) or _is_derivative(a.get("name", "")))]
 
         if len(event_alarms) < 2:
             continue
