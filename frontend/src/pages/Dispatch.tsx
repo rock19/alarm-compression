@@ -300,8 +300,15 @@ export default function Dispatch() {
                   suffix={<CloseCircleOutlined style={{ color: '#ff4d4f' }} />} />
               </Col>
               <Col span={4}>
-                <Progress type="circle" percent={valResult.coverage_rate} size={70}
-                  status={valResult.coverage_rate > 70 ? 'success' : valResult.coverage_rate > 40 ? 'active' : 'exception'} />
+                <Card size="small" style={{textAlign:'center'}}>
+                  <div style={{fontSize:12,color:'#666',marginBottom:4}}>规则命中率</div>
+                  <Progress type="circle" percent={valResult.coverage_rate} size={70}
+                    format={p => `${p?.toFixed(0)}%`}
+                    status={valResult.coverage_rate > 70 ? 'success' : valResult.coverage_rate > 40 ? 'active' : 'exception'} />
+                  <div style={{fontSize:10,color:'#999',marginTop:4}}>
+                    {valResult.coverage_rate > 70 ? '高命中' : valResult.coverage_rate > 40 ? '中等' : '低命中'}
+                  </div>
+                </Card>
               </Col>
             </Row>
           )}
