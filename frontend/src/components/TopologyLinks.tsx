@@ -302,14 +302,11 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
         <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true,pageSizeOptions:['10','20','50']}} scroll={{x:900}}
           dataSource={neModalData.alarms.map((a: any, j: number) => ({...a, key: j}))}
           columns={[
-            { title: '网管', dataIndex: '网管', width: 100, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '网元', dataIndex: '网元', width: 130, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '告警对象', dataIndex: '告警对象', width: 110, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '级别', dataIndex: '告警级别', width: 60, render: (v:any) => <Tag color={(v||'').includes('紧急')?'red':(v||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v||''}</Tag> },
-            { title: '告警名称', dataIndex: '告警名称', width: 140, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '告警类型', dataIndex: '告警类型', width: 80, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '告警描述', dataIndex: '告警描述', width: 120, render: (v:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v||''}</div> },
-            { title: '发生时间', dataIndex: '发生时间', width: 130, render: (v:any) => <span style={{fontSize:10}}>{(v||'').toString().replace('T',' ')}</span> },
+            { title: '网元', width: 140, render: (_:any, r:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{r.网元||r.ne||''}</div> },
+            { title: '告警名称', width: 180, render: (_:any, r:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{r.告警名称||r.name||''}</div> },
+            { title: '级别', width: 60, render: (_:any, r:any) => <Tag color={(r.告警级别||r.severity||'').includes('紧急')?'red':(r.告警级别||r.severity||'').includes('主要')?'orange':'blue'} style={{fontSize:10}}>{r.告警级别||r.severity||''}</Tag> },
+            { title: '告警描述', width: 150, render: (_:any, r:any) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{r.告警描述||r.alarm_desc||r.description||''}</div> },
+            { title: '发生时间', width: 140, render: (_:any, r:any) => <span style={{fontSize:10}}>{(r.发生时间||r.first_time||r.time||'').toString().replace('T',' ')}</span> },
           ]}
         />
       ) : <span style={{color:'#999'}}>该网元无告警</span>}
