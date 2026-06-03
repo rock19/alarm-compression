@@ -218,7 +218,7 @@ export default function TopologyLinks({ nes, alarms, neTypes }: { nes: string[];
                 series: [{
                   type: 'tree',
                   data: treeData ? [treeData, ...extraRoots] : extraRoots,
-                  top: 10, left: 10, bottom: 10, right: 40,
+                  top: 20, left: 40, bottom: 60, right: 40,
                   symbol: 'circle',
                   symbolSize: isLarge ? 8 : 12,
                   roam: true,
