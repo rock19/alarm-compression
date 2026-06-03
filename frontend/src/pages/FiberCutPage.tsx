@@ -248,19 +248,14 @@ export default function FiberCutPage() {
         </Card>
       )}
 
-      {/* Unmatched alarms */}
-      {unmatchedFiberDetails.length > 0 && (
-        <Card size="small" title={<span>未命中场景的告警 ({unmatchedFiberDetails.length} 条) <Tag color="orange">无法识别为光缆中断模式</Tag></span>}
+      {/* Unmatched alarms summary */}
+      {unmatchedAlarms.length > 0 && (
+        <Card size="small" title={<span>未命中光缆中断的告警 ({unmatchedAlarms.length} 条) <Tag color="orange">未被识别为光纤/衍生告警</Tag></span>}
           extra={<Input size="small" placeholder="筛选网元/告警..." value={filterText} onChange={e => setFilterText(e.target.value)}
             style={{ width: 200 }} allowClear />}>
-          <Table size="small" bordered pagination={{ pageSize: 15 }}
-            dataSource={filteredUnmatched.map((a: any, j: number) => ({ ...a, key: j }))}
-            columns={[
-              { title: '网元', dataIndex: 'ne', width: 140, ellipsis: true },
-              { title: '告警名称', dataIndex: 'name', width: 160, render: (v: string) => <div style={{wordBreak:'break-all',whiteSpace:'normal',fontSize:10}}>{v}</div> },
-              { title: '级别', dataIndex: 'severity', width: 70, render: (v: string) => <Tag color={v?.includes('紧急')?'red':v?.includes('主要')?'orange':'blue'} style={{fontSize:10}}>{v}</Tag> },
-              { title: '时间', dataIndex: 'first_time', width: 140, render: (v: string) => <span style={{fontSize:10}}>{(v||'').replace('T',' ')}</span> },
-            ]}
+          <Table size="small" bordered pagination={{pageSize:20,showSizeChanger:true}} scroll={{x:1000}}
+            dataSource={unmatchedAlarms.filter((a: any) => !filterText || (a.ne||'').includes(filterText) || (a.name||'').includes(filterText) || (a.网元||'').includes(filterText) || (a.告警名称||'').includes(filterText)).map((a: any, j: number) => ({...a, key: j}))}
+            columns={ALARM_COLUMNS}
           />
         </Card>
       )}
